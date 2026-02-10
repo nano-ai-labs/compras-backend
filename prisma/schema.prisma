@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // url = env("DATABASE_URL") // si ya lo tienes en otro lado, déjalo como esté
+}
+
+model User {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String    @unique @db.VarChar(255)
+  fullName      String?   @map("full_name") @db.VarChar(100)
+  googleId      String?   @map("google_id") @db.VarChar(255)
+  role          String?   @default("CLIENT") @db.VarChar(20)
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  isGlobalAdmin Boolean   @default(false) @map("is_global_admin")
+
+  clients       Client[]
+
+  @@map("users")
+}
+
+model Client {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String    @db.VarChar(100)
+  phone     String?   @db.VarChar(20)
+  address   String?
+  userId    String?   @map("user_id") @db.Uuid
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user      User?     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders    Order[]
+
+  @@map("clients")
+}
+
+model Trip {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String    @db.VarChar(100)
+  startDate DateTime  @map("start_date") @db.Date
+  endDate   DateTime  @map("end_date") @db.Date
+  status    String?   @default("ACTIVE") @db.VarChar(20)
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+
+  orders    Order[]
+
+  @@map("trips")
+}
+
+model Order {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId    String     @map("trip_id") @db.Uuid
+  clientId  String     @map("client_id") @db.Uuid
+  status    String?    @default("OPEN") @db.VarChar(20)
+  createdAt DateTime?  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  orderItems OrderItem[] @relation("OrderToOrderItems")
+
+  client    Client     @relation(fields: [clientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trip      Trip       @relation(fields: [tripId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tripId, clientId], map: "unique_order_per_trip_client")
+  @@map("orders")
+}
+
+model Product {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sku       String?    @unique @db.VarChar(50)
+  name      String     @db.VarChar(255)
+  stock     Int        @default(0)
+  priceMxn  Decimal    @default(0) @map("price_mxn") @db.Decimal(10, 2)
+  createdAt DateTime?  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  orderItems OrderItem[] @relation("ProductToOrderItems")
+
+  @@map("products")
+}
+
+model OrderItem {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId          String    @map("order_id") @db.Uuid
+  productName      String    @map("product_name") @db.VarChar(255)
+  imageUrl         String?   @map("image_url")
+  originalUsdPrice Decimal   @map("original_usd_price") @db.Decimal(10, 2)
+  exchangeRateUsed Decimal   @map("exchange_rate_used") @db.Decimal(10, 2)
+  finalPriceMxn    Decimal   @map("final_price_mxn") @db.Decimal(10, 2)
+  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  productId        String?   @map("product_id") @db.Uuid
+  quantity         Int       @default(1)
+  unitPriceMxn     Decimal?  @map("unit_price_mxn") @db.Decimal(10, 2)
+
+  order   Order    @relation("OrderToOrderItems", fields: [orderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product Product? @relation("ProductToOrderItems", fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([orderId, productId], map: "unique_product_per_order")
+  @@map("order_items")
+}
+
+model GlobalSetting {
+  id                Int       @id @default(autoincrement())
+  dollarExchangeRate Decimal  @map("dollar_exchange_rate") @db.Decimal(10, 2)
+  currencySpread     Decimal? @default(0.50) @map("currency_spread") @db.Decimal(10, 2)
+  commissionPct      Decimal? @default(25.00) @map("commission_pct") @db.Decimal(5, 2)
+  importTaxPct       Decimal? @default(19.00) @map("import_tax_pct") @db.Decimal(5, 2)
+  salesTaxPct        Decimal? @default(8.25) @map("sales_tax_pct") @db.Decimal(5, 2)
+  updatedAt          DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  @@map("global_settings")
+}
