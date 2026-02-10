@@ -3,32 +3,37 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copiar archivos de dependencias
+# Copiar archivos de configuración de dependencias
 COPY package*.json ./
+COPY prisma ./prisma/
 
-# Instalar dependencias (incluyendo las de desarrollo para compilar)
+# Instalar todas las dependencias
 RUN npm install
 
-# Copiar el resto del código y compilar
+# GENERAR EL CLIENTE DE PRISMA (Esto soluciona los 47 errores)
+RUN npx prisma generate
+
+# Copiar el resto del código fuente
 COPY . .
+
+# Compilar el proyecto NestJS
 RUN npm run build
 
-# Etapa 2: Producción
+# Etapa 2: Producción (Imagen final ligera)
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Variable de entorno para producción
+# Definir variables de entorno
 ENV NODE_ENV=production
 
-# Copiar solo lo necesario desde la etapa builder
+# Copiar solo lo necesario para ejecutar la app
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/prisma ./prisma
 
-# Instalar solo dependencias de producción (más ligero)
-RUN npm install --only=production
-
-# Google Cloud Run usa el puerto 8080 por defecto
+# Exponer el puerto que usa Cloud Run (8080)
 EXPOSE 8080
 
 # Comando para iniciar la aplicación
