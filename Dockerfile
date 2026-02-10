@@ -1,30 +1,25 @@
-# 1. Etapa de Construcción
-FROM node:20-alpine AS builder
+FROM node:20-alpine
+
 WORKDIR /app
 
+# 1. Copiar archivos de dependencias
 COPY package*.json ./
 COPY prisma ./prisma/
 
+# 2. Instalar dependencias y generar Prisma
 RUN npm install
 RUN npx prisma generate
 
-# IMPORTANTE: Copiar TODO antes del build
+# 3. Copiar TODO el código fuente
 COPY . .
+
+# 4. Compilar el proyecto
 RUN npm run build
 
-# 2. Etapa de Producción
-FROM node:20-alpine AS runner
-WORKDIR /app
-
+# 5. Configurar puerto y host
+ENV PORT=8080
 ENV NODE_ENV=production
-
-# Copiamos las dependencias y la carpeta dist desde el builder
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
-
 EXPOSE 8080
 
-# Usamos la ruta completa para evitar dudas
+# 6. Comando de arranque (usando la ruta relativa)
 CMD ["node", "dist/main.js"]
