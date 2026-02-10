@@ -13,7 +13,7 @@ console.log("ENV GOOGLE_CLIENT_ID:", process.env.GOOGLE_CLIENT_ID);
     forbidNonWhitelisted: true,
   }));
 
-  const port = process.env.PORT || 4000;
+  const port = process.env.PORT_NUMBER || 4000;
   await app.listen(port);
   console.log(`API: http://localhost:${port}/api`);
 }
