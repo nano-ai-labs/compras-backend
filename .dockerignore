@@ -1,7 +1,4 @@
 node_modules
-npm-debug.log
-dist
 .git
 .env
-Dockerfile
-.dockerignore
+# dist <--- Asegúrate de que esto NO impida que el builder trabaje

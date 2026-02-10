@@ -1,40 +1,30 @@
-# Etapa 1: Construcción (Build)
+# 1. Etapa de Construcción
 FROM node:20-alpine AS builder
-
 WORKDIR /app
 
-# Copiar archivos de configuración de dependencias
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Instalar todas las dependencias
 RUN npm install
-
-# GENERAR EL CLIENTE DE PRISMA (Esto soluciona los 47 errores)
 RUN npx prisma generate
 
-# Copiar el resto del código fuente
+# IMPORTANTE: Copiar TODO antes del build
 COPY . .
-
-# Compilar el proyecto NestJS
 RUN npm run build
 
-# Etapa 2: Producción (Imagen final ligera)
+# 2. Etapa de Producción
 FROM node:20-alpine AS runner
-
 WORKDIR /app
 
-# Definir variables de entorno
 ENV NODE_ENV=production
 
-# Copiar solo lo necesario para ejecutar la app
+# Copiamos las dependencias y la carpeta dist desde el builder
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 
-# Exponer el puerto que usa Cloud Run (8080)
 EXPOSE 8080
 
-# Comando para iniciar la aplicación
-CMD ["node", "dist/main"]
+# Usamos la ruta completa para evitar dudas
+CMD ["node", "dist/main.js"]
