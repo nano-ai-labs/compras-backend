@@ -14,17 +14,14 @@ export class TripsService {
     private readonly gcs: GcsService,
   ) {}
 
-  /** * ✅ Helper para procesar cada viaje y adjuntar la URL firmada.
-   * Si hay un error con el Storage, retorna null en imageUrl para no romper la app.
-   */
   private async withImageUrl(t: Trip) {
-    let imageUrl = null;
+    let imageUrl: string | null = null;
     try {
       if (t.imagePath) {
         imageUrl = await this.gcs.getSignedUrl(t.imagePath, 60);
       }
     } catch (error) {
-      console.error(`Error al obtener Signed URL para el viaje ${t.id}:`, error.message);
+      console.error(`Error al obtener URL para el viaje ${t.id}:`, error.message);
     }
 
     return {
@@ -64,13 +61,8 @@ export class TripsService {
       }),
     ]);
 
-    // ✅ Procesamos todas las URLs firmadas en paralelo para mayor velocidad
     const data = await Promise.all(trips.map((t) => this.withImageUrl(t)));
-    
-    return { 
-      data, 
-      meta: buildMeta(page, limit, total) 
-    };
+    return { data, meta: buildMeta(page, limit, total) };
   }
 
   async findOne(id: string) {
@@ -101,16 +93,14 @@ export class TripsService {
     const trip = await this.prisma.trip.findUnique({ where: { id } });
     if (!trip) throw new NotFoundException('Trip no encontrado');
 
-    // Si ya tenía una imagen, la borramos del bucket para no dejar basura
     if (trip.imagePath) {
       try {
         await this.gcs.delete(trip.imagePath);
       } catch (e) {
-        console.warn('No se pudo borrar la imagen anterior, continuando...');
+        console.warn('No se pudo borrar la imagen anterior');
       }
     }
 
-    // Subimos la nueva
     const imagePath = await this.gcs.uploadTripImage(id, file);
 
     const updated = await this.prisma.trip.update({
@@ -141,7 +131,6 @@ export class TripsService {
     const trip = await this.prisma.trip.findUnique({ where: { id } });
     if (!trip) throw new NotFoundException('Trip no encontrado');
 
-    // Limpieza de storage antes de borrar registro
     if (trip.imagePath) {
       await this.gcs.delete(trip.imagePath);
     }

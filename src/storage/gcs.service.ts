@@ -12,8 +12,7 @@ export class GcsService {
     this.bucketName = process.env.GCS_BUCKET || '';
     const keyPath = './gcs-key.json';
 
-    // ✅ DETECCIÓN INTELIGENTE DE ENTORNO
-    // Si el archivo JSON existe (Local), úsalo. Si no (Nube), usa la identidad de Cloud Run.
+    // Si el archivo existe localmente lo usa, si no, usa la identidad de Google Cloud
     if (fs.existsSync(keyPath)) {
       this.storage = new Storage({ keyFilename: keyPath });
     } else {
@@ -23,7 +22,7 @@ export class GcsService {
 
   private get bucket() {
     if (!this.bucketName) {
-      throw new InternalServerErrorException('GCS_BUCKET no está definido en las variables de entorno');
+      throw new InternalServerErrorException('La variable de entorno GCS_BUCKET no está definida');
     }
     return this.storage.bucket(this.bucketName);
   }
@@ -38,7 +37,7 @@ export class GcsService {
       return path;
     } catch (error) {
       console.error('Error subiendo imagen a GCS:', error.message);
-      throw new InternalServerErrorException('No se pudo subir la imagen');
+      throw new InternalServerErrorException('No se pudo subir la imagen al storage');
     }
   }
 
@@ -48,13 +47,11 @@ export class GcsService {
       
       const [url] = await this.bucket.file(path).getSignedUrl({
         action: 'read',
-        version: 'v4', // Recomendado para Cloud Run
+        version: 'v4',
         expires: Date.now() + minutes * 60 * 1000,
       });
       return url;
     } catch (error) {
-      // ✅ CRUCIAL: Si falla la firma (archivo borrado o permisos), 
-      // regresamos null en lugar de romper todo el listado de viajes.
       console.error(`Error firmando URL para ${path}:`, error.message);
       return null;
     }
