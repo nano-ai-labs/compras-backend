@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // url = env("DATABASE_URL") // si ya lo tienes en otro lado, déjalo como esté
+   //url = env("DATABASE_URL") // si ya lo tienes en otro lado, déjalo como esté
 }
 
 model User {
@@ -41,12 +41,16 @@ model Trip {
   startDate DateTime  @map("start_date") @db.Date
   endDate   DateTime  @map("end_date") @db.Date
   status    String?   @default("ACTIVE") @db.VarChar(20)
+
+  imagePath String?   @map("image_path") @db.VarChar(500) // ✅ NUEVO
+
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
 
   orders    Order[]
 
   @@map("trips")
 }
+
 
 model Order {
   id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

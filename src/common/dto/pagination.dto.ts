@@ -18,4 +18,9 @@ export class PaginationDto {
   @IsOptional()
   @IsString()
   q?: string;
+
+  // ✅ NUEVO: filtro por status
+  @IsOptional()
+  @IsString()
+  status?: 'ACTIVE' | 'INACTIVE';
 }
