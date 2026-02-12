@@ -15,4 +15,10 @@ export class OrdersController {
   findOne(@Param('id') id: string) {
     return this.ordersService.findOne(id);
   }
+
+  // Nuevo endpoint para los detalles calculados
+  @Get(':id/details')
+  getDetails(@Param('id') id: string) {
+    return this.ordersService.getOrderDetails(id);
+  }
 }

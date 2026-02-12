@@ -6,8 +6,5 @@ import { CreateTripProductDto } from './dto/create-trip-product.dto';
 export class TripProductsController {
   constructor(private readonly tripProductsService: TripProductsService) {}
 
-  @Post()
-  create(@Body() createTripProductDto: CreateTripProductDto) {
-    return this.tripProductsService.addProductToTrip(createTripProductDto);
-  }
+ß
 }

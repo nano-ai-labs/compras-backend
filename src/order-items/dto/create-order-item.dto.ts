@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional } from 'class-validator';
 
 export class CreateOrderItemDto {
   @IsString()
@@ -8,4 +8,8 @@ export class CreateOrderItemDto {
   @IsString()
   @IsNotEmpty()
   productId: string;
+
+  @IsNumber()
+  @IsNotEmpty()
+  base_price_usd: number; // Asegúrate de que el nombre coincida exactamente
 }

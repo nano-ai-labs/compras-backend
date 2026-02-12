@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsNumber } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsEnum, IsDateString, IsOptional } from 'class-validator';
 
 export class CreateOrderPaymentDto {
   @IsString()
@@ -8,4 +8,12 @@ export class CreateOrderPaymentDto {
   @IsNumber()
   @IsNotEmpty()
   amountMxn: number;
+
+  @IsString()
+  @IsNotEmpty()
+  method: string; // O usa un Enum si lo definiste en Prisma
+
+  @IsOptional()
+  @IsDateString()
+  paidAt?: string;
 }

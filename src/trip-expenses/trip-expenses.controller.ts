@@ -1,4 +1,5 @@
-import { Controller, Post, Body, Get, Param } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { TripExpensesService } from './trip-expenses.service';
 import { CreateTripExpenseDto } from './dto/create-trip-expense.dto';
 
@@ -7,8 +8,12 @@ export class TripExpensesController {
   constructor(private readonly tripExpensesService: TripExpensesService) {}
 
   @Post()
-  create(@Body() createTripExpenseDto: CreateTripExpenseDto) {
-    return this.tripExpensesService.create(createTripExpenseDto);
+  @UseInterceptors(FileInterceptor('file')) // Allows receiving a file in the request
+  create(
+    @Body() createTripExpenseDto: CreateTripExpenseDto,
+    @UploadedFile() file?: Express.Multer.File, // Get the file from the request
+  ) {
+    return this.tripExpensesService.create(createTripExpenseDto, file);
   }
 
   @Get(':tripId')

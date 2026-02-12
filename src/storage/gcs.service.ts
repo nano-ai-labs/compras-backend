@@ -58,6 +58,23 @@ export class GcsService {
     }
   }
 
+  async uploadFile(file: Express.Multer.File, folder: string): Promise<string> {
+  try {
+    const fileName = `${randomUUID()}-${file.originalname}`;
+    const path = `${folder}/${fileName}`;
+    
+    await this.bucket.file(path).save(file.buffer, {
+      contentType: file.mimetype,
+      resumable: false,
+    });
+    
+    return path;
+  } catch (error) {
+    console.error('Error subiendo archivo a GCS:', error.message);
+    throw new InternalServerErrorException('No se pudo subir el archivo');
+  }
+}
+
   async delete(path: string) {
     try {
       await this.bucket.file(path).delete({ ignoreNotFound: true });

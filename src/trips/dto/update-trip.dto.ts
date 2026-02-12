@@ -12,4 +12,8 @@ export class UpdateTripDto {
   @IsOptional()
   @IsString()
   endDate?: string;
-}  @IsOptional()\n  @IsString()\n  status?: string;
+
+   @IsOptional()
+  @IsString()
+  status?: string; // Moved inside the class
+}  

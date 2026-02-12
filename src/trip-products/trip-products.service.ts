@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTripProductDto } from './dto/create-trip-product.dto';
 
@@ -6,27 +6,30 @@ import { CreateTripProductDto } from './dto/create-trip-product.dto';
 export class TripProductsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async addProductToTrip(data: CreateTripProductDto) {
-    const { tripId, productId, base_price_usd } = data;
+  async addProductToTrip(dto: CreateTripProductDto) {
+    const { tripId, productId, base_price_usd } = dto;
 
-    // Verificar si el producto ya existe en el viaje
     const existing = await this.prisma.tripProduct.findUnique({
-      where: { tripId_productId: { tripId: tripId, productId: productId } },
+      where: { tripId_productId: { tripId, productId } },
     });
 
     if (existing) {
-      throw new Error('El producto ya está agregado a este viaje.');
+      throw new BadRequestException('Este producto ya existe en el viaje.');
     }
 
-    // Obtener precio por defecto si no se proporciona
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
-    const price = base_price_usd || product.defaultPriceUsd;
+    if (!product) {
+      throw new NotFoundException('Producto no encontrado');
+    }
+
+    const finalPrice = base_price_usd ?? product.defaultPriceUsd ?? 0;
 
     return await this.prisma.tripProduct.create({
       data: {
-        tripId: tripId,
-        productId: productId,
-        base_price_usd: price,
+        tripId,
+        productId,
+        // CHANGED: Most likely 'basePriceUsd' based on standard Prisma naming
+        basePriceUsd: finalPrice, 
       },
     });
   }

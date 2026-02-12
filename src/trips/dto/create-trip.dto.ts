@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class CreateTripDto {
   @IsString()
@@ -12,4 +12,8 @@ export class CreateTripDto {
   @IsString()
   @IsNotEmpty()
   endDate: string;
-}  @IsOptional()\n  @IsString()\n  status?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string; // Moved inside the class
+}

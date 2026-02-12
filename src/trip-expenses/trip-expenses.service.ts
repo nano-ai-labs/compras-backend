@@ -7,17 +7,22 @@ import { GcsService } from '../storage/gcs.service';
 export class TripExpensesService {
   constructor(private readonly prisma: PrismaService, private readonly gcsService: GcsService) {}
 
-  async create(data: CreateTripExpenseDto, file: Express.Multer.File) {
+  // Added '?' to file to make it optional (Fixes TS2554)
+async create(data: CreateTripExpenseDto, file?: Express.Multer.File) {
     const { tripId, categoryId, amount_usd, exchangeRate_base } = data;
 
-    const convertedAmount = amount_usd ? amount_usd * exchangeRate_base : 0;
+    const amount = amount_usd ?? 0;
+    const rate = exchangeRate_base ?? 1;
+    const convertedAmount = amount * rate;
 
     const newExpense = await this.prisma.tripExpense.create({
       data: {
         tripId,
         categoryId,
         amountMxn: convertedAmount,
-        amount_usd,
+        amount: amount,
+        // FIX: Added the missing required property 'expenseDate'
+        expenseDate: new Date(), 
       },
     });
 
@@ -25,7 +30,7 @@ export class TripExpensesService {
       const receiptUrl = await this.gcsService.uploadFile(file, 'expenses');
       await this.prisma.tripExpense.update({
         where: { id: newExpense.id },
-        data: { receiptUrl: receiptUrl },
+        data: { receiptUrl },
       });
     }
 
@@ -33,6 +38,7 @@ export class TripExpensesService {
   }
 
   async findAllByTrip(tripId: string) {
-    return this.prisma.tripExpense.findMany({ where: { tripId: tripId } });
+    return this.prisma.tripExpense.findMany({ where: { tripId } });
   }
+  
 }
