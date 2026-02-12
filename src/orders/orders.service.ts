@@ -1,86 +1,38 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import { PaginationDto } from '../common/dto/pagination.dto';
-import { buildMeta } from '../common/pagination';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderDto } from './dto/update-order.dto';
-
-@Injectable()
-export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
-
-  create(dto: CreateOrderDto) {
-    return this.prisma.order.create({
-      data: {
-        tripId: dto.tripId,
-        clientId: dto.clientId,
-        // Default correcto según tu Prisma: DRAFT
-        status: dto.status ?? OrderStatus.DRAFT,
-      },
+async getOrderDetails(order_id: string) {
+    const order = await this.prisma.orders.findUnique({
+      where: { id: order_id },
+      include: { order_items: true },
     });
-  }
 
-  async findAll({ page = 1, limit = 20, q }: PaginationDto) {
-    const skip = (page - 1) * limit;
-    const search = q?.trim();
+    if (!order) throw new Error('Order not found.');
 
-    // OJO: status es enum -> no puedes usar contains.
-    // Si q coincide con un status válido, filtramos por ese status.
-    let where: Prisma.OrderWhereInput | undefined = undefined;
+    let totalProductsUSD = 0;
+    let totalProductsMXNBase = 0;
+    let totalProductsMXNApplied = 0;
+    let totalShippingCost = 0;
 
-    if (search) {
-      const upper = search.toUpperCase();
-
-      if (Object.values(OrderStatus).includes(upper as OrderStatus)) {
-        where = { status: upper as OrderStatus };
-      } else {
-        // Si quieres buscar por cliente o trip por nombre, aquí puedes ampliarlo.
-        // Por ahora, si no coincide con enum, no filtramos (o podrías regresar vacío).
-        where = undefined;
-      }
+    for (const item of order.order_items) {
+      const itemDetails = await this.getItemBreakdown(item.id);
+      totalProductsUSD += itemDetails.breakdown.USD.subtotal_usd;
+      totalProductsMXNBase += itemDetails.breakdown.MXN.base.subtotal_mxn_base;
+      totalProductsMXNApplied += itemDetails.breakdown.MXN.applied.subtotal_mxn_applied;
     }
 
-    const [total, data] = await Promise.all([
-      this.prisma.order.count({ where }),
-      this.prisma.order.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          client: true,
-          trip: true,
-          items: true, // <-- en tu Prisma se llama items, NO orderItems
-        },
-      }),
-    ]);
+    totalShippingCost += await this.getShippingCost(order.id);
 
-    return { data, meta: buildMeta(page, limit, total) };
-  }
+    const grandTotalMXNBase = totalProductsMXNBase + totalShippingCost;
+    const grandTotalMXNApplied = totalProductsMXNApplied + totalShippingCost;
 
-  findOne(id: string) {
-    return this.prisma.order.findUnique({
-      where: { id },
-      include: {
-        client: true,
-        trip: true,
-        items: true, // <-- en tu Prisma se llama items
+    return {
+      totalProducts: {
+        cost_usd: totalProductsUSD,
+        cost_mxn_base: totalProductsMXNBase,
+        cost_mxn_applied: totalProductsMXNApplied,
       },
-    });
-  }
-
-  update(id: string, dto: UpdateOrderDto) {
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        // si luego agregas más campos al dto, los agregas aquí
-        status: dto.status,
+      totalShipping: totalShippingCost,
+      grandTotal: {
+        base: grandTotalMXNBase,
+        applied: grandTotalMXNApplied,
       },
-    });
+    };
   }
-
-  remove(id: string) {
-    return this.prisma.order.delete({ where: { id } });
-  }
-}

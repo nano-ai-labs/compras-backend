@@ -12,7 +12,6 @@ export class GcsService {
     this.bucketName = process.env.GCS_BUCKET || '';
     const keyPath = './gcs-key.json';
 
-    // Si el archivo existe localmente lo usa, si no, usa la identidad de Google Cloud
     if (fs.existsSync(keyPath)) {
       this.storage = new Storage({ keyFilename: keyPath });
     } else {
@@ -27,24 +26,23 @@ export class GcsService {
     return this.storage.bucket(this.bucketName);
   }
 
-  async uploadTripImage(tripId: string, file: Express.Multer.File) {
+  async uploadFile(file: Express.Multer.File, folderName: string) {
     try {
-      const path = `trips/${tripId}/${randomUUID()}.jpg`;
+      const path = `${folderName}/${randomUUID()}.jpg`;
       await this.bucket.file(path).save(file.buffer, {
         contentType: file.mimetype,
         resumable: false,
       });
-      return path;
+      return await this.getSignedUrl(path);
     } catch (error) {
-      console.error('Error subiendo imagen a GCS:', error.message);
-      throw new InternalServerErrorException('No se pudo subir la imagen al storage');
+      console.error('Error subiendo archivo a GCS:', error.message);
+      throw new InternalServerErrorException('No se pudo subir el archivo al storage');
     }
   }
 
   async getSignedUrl(path: string, minutes = 60) {
     try {
       if (!path) return null;
-      
       const [url] = await this.bucket.file(path).getSignedUrl({
         action: 'read',
         version: 'v4',

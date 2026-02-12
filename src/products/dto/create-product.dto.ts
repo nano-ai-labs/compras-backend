@@ -1,15 +1,27 @@
-import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber } from 'class-validator';
 
 export class CreateProductDto {
-  @IsOptional() @IsString() @MaxLength(50)
-  sku?: string;
-
-  @IsString() @MaxLength(255)
+  @IsString()
+  @IsNotEmpty()
   name: string;
 
-  @IsInt() @Min(0)
-  stock: number;
+  @IsOptional()
+  @IsString()
+  image_url?: string;
 
-  // Decimal como string
-  priceMxn: string;
+  @IsOptional()
+  @IsNumber()
+  default_price_usd?: number;
+
+  @IsOptional()
+  @IsNumber()
+  stock?: number;
+
+  @IsString()
+  @IsNotEmpty()
+  product_type_id: string;
+
+  @IsOptional()
+  @IsBoolean()
+  is_active?: boolean = true;
 }
