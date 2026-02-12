@@ -151,23 +151,24 @@ model Trip {
   name      String
   status    TripStatus @default(PLANNING)
 
+  imagePath String?    @map("image_path") // ✅ RE-AGREGAR
+
   startDate DateTime?  @map("start_date") @db.Date
   endDate   DateTime?  @map("end_date")   @db.Date
 
   exchangeRules TripExchangeRule[]
   productFees   TripProductFee[]
   shippingRates TripShippingRate[]
-
   tripProducts  TripProduct[]
-
-  orders   Order[]
-  expenses TripExpense[]
+  orders        Order[]
+  expenses      TripExpense[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("trips")
 }
+
 
 // Valor por viaje: MXN por USD (+0.30, +0.50...)
 model TripExchangeRule {

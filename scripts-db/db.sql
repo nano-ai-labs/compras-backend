@@ -251,3 +251,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE INDEX IF NOT EXISTS "idx_order_items_trip_product_id"
 ON "order_items" ("trip_product_id");
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+
+ALTER TABLE "trips"
+ADD COLUMN IF NOT EXISTS "image_path" TEXT;
