@@ -346,3 +346,95 @@ ALTER TABLE "products"
 
 ALTER TABLE "clients"
   ADD COLUMN IF NOT EXISTS "phone" VARCHAR(30);
+
+
+-- 1. Aseguramos los tipos de producto actualizados en español
+T-- 1. Limpiamos y recreamos el catálogo maestro para evitar desajustes
+TRUNCATE TABLE "product_types" RESTART IDENTITY CASCADE;
+
+INSERT INTO "product_types" ("code", "name") VALUES
+('KIDS_CLOTHING', 'Ropa de Niños (70)'),
+('KIDS_SHOES', 'Calzado de Niños (150)'),
+('CLOTHING_LIGHT', 'Ropa Ligera Adulto (80)'),
+('CLOTHING_HEAVY', 'Ropa Pesada Adulto (180)'),
+('SHOES_LIGHT', 'Calzado Ligero / Sandalias (120)'),
+('SHOES_STANDARD', 'Calzado Adulto / Tenis (230)'),
+('SHOES_HEAVY', 'Calzado Pesado / Botas (400)'),
+('SHOES_WITH_BOX', 'Calzado con Caja Original (450)'),
+('ACCESSORY_SMALL', 'Carteras y Accesorios (100)'),
+('HANDBAG_SMALL', 'Bolsas Crossbody (200)'),
+('HANDBAG_LARGE', 'Bolsas Grandes / Totes (350)'),
+('PERFUME_100ML', 'Perfumes hasta 100ml (150)'),
+('ELECTRONICS_SMALL', 'Electrónicos Pequeños (250)'),
+('BEAUTY_HEALTH', 'Belleza y Salud (80)');
+
+-- 2. Insertamos los costos de envío para tu viaje
+INSERT INTO "trip_shipping_rates" ("trip_id", "product_type_id", "name_snapshot", "cost_mxn")
+SELECT 
+    t.id AS trip_id, 
+    pt.id AS product_type_id, 
+    pt.name AS name_snapshot,
+    CASE pt.code
+        WHEN 'KIDS_CLOTHING'    THEN 70.00
+        WHEN 'CLOTHING_LIGHT'   THEN 80.00
+        WHEN 'ACCESSORY_SMALL'  THEN 100.00
+        WHEN 'HANDBAG_SMALL'    THEN 200.00
+        WHEN 'KIDS_SHOES'       THEN 150.00
+        WHEN 'CLOTHING_HEAVY'   THEN 180.00
+        WHEN 'SHOES_LIGHT'      THEN 120.00
+        WHEN 'SHOES_STANDARD'   THEN 230.00
+        WHEN 'SHOES_HEAVY'      THEN 400.00
+        WHEN 'SHOES_WITH_BOX'   THEN 450.00
+        WHEN 'HANDBAG_LARGE'    THEN 350.00
+        WHEN 'PERFUME_100ML'    THEN 150.00
+        WHEN 'ELECTRONICS_SMALL' THEN 250.00
+        WHEN 'BEAUTY_HEALTH'    THEN 80.00
+        ELSE 0.00 -- Esto evita que el valor sea NULL si falta alguno
+    END AS cost_mxn
+FROM "trips" t
+CROSS JOIN "product_types" pt
+WHERE t.id = (SELECT id FROM "trips" LIMIT 1)
+ON CONFLICT ("trip_id", "product_type_id") DO UPDATE 
+SET cost_mxn = EXCLUDED.cost_mxn, name_snapshot = EXCLUDED.name_snapshot;
+
+
+-- 1. POBLAR CATÁLOGOS (Solo si no tienen datos)
+INSERT INTO "product_fee_catalog" ("code", "name") VALUES
+('SALES_TAX', 'Impuesto de Venta (USA Tax)'),
+('IMPORT_TAX', 'Impuesto de Importación (Aduana)'),
+('SERVICE_COMMISSION', 'Comisión Personal Shopper')
+ON CONFLICT ("code") DO NOTHING;
+
+INSERT INTO "exchange_rule_catalog" ("code", "name") VALUES
+('USD_SPREAD', 'Margen de Protección Dólar')
+ON CONFLICT ("code") DO NOTHING;
+
+-- 2. APLICAR PORCENTAJES AL VIAJE (6%, 19%, 20%)
+INSERT INTO "trip_product_fees" ("trip_id", "catalog_id", "name_snapshot", "percentage")
+SELECT 
+    t.id AS trip_id, 
+    pfc.id AS catalog_id, 
+    pfc.name AS name_snapshot,
+    CASE pfc.code
+        WHEN 'SALES_TAX'          THEN 6.00  -- Tax de Maryland
+        WHEN 'IMPORT_TAX'         THEN 19.00 -- Importación México
+        WHEN 'SERVICE_COMMISSION' THEN 20.00 -- Tu ganancia (20%)
+    END AS percentage
+FROM "trips" t
+CROSS JOIN "product_fee_catalog" pfc
+WHERE t.id = (SELECT id FROM "trips" LIMIT 1)
+ON CONFLICT ("trip_id", "catalog_id") DO UPDATE 
+SET percentage = EXCLUDED.percentage, name_snapshot = EXCLUDED.name_snapshot;
+
+-- 3. APLICAR MARGEN DE DIVISA ($0.60)
+INSERT INTO "trip_exchange_rules" ("trip_id", "catalog_id", "name_snapshot", "value_added")
+SELECT 
+    t.id AS trip_id, 
+    erc.id AS catalog_id, 
+    erc.name AS name_snapshot,
+    0.60 -- Tu margen de ganancia y protección por dólar
+FROM "trips" t
+CROSS JOIN "exchange_rule_catalog" erc
+WHERE t.id = (SELECT id FROM "trips" LIMIT 1)
+ON CONFLICT ("trip_id", "catalog_id") DO UPDATE 
+SET value_added = EXCLUDED.value_added, name_snapshot = EXCLUDED.name_snapshot;
