@@ -1,15 +1,15 @@
-import { IsDateString, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty } from 'class-validator';
 
 export class CreateTripDto {
-  @IsString() @MaxLength(100)
+  @IsString()
+  @IsNotEmpty()
   name: string;
 
-  @IsDateString()
-  startDate: string;
+  @IsString()
+  @IsNotEmpty()
+  start_date: string;
 
-  @IsDateString()
-  endDate: string;
-
-  @IsOptional() @IsString() @MaxLength(20)
-  status?: string;
+  @IsString()
+  @IsNotEmpty()
+  end_date: string;
 }
