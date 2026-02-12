@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { buildMeta } from '../common/pagination';
@@ -15,7 +15,8 @@ export class OrdersService {
       data: {
         tripId: dto.tripId,
         clientId: dto.clientId,
-        status: dto.status ?? 'OPEN',
+        // Default correcto según tu Prisma: DRAFT
+        status: dto.status ?? OrderStatus.DRAFT,
       },
     });
   }
@@ -24,11 +25,21 @@ export class OrdersService {
     const skip = (page - 1) * limit;
     const search = q?.trim();
 
-    const where: Prisma.OrderWhereInput | undefined = search
-      ? {
-          OR: [{ status: { contains: search, mode: Prisma.QueryMode.insensitive } }],
-        }
-      : undefined;
+    // OJO: status es enum -> no puedes usar contains.
+    // Si q coincide con un status válido, filtramos por ese status.
+    let where: Prisma.OrderWhereInput | undefined = undefined;
+
+    if (search) {
+      const upper = search.toUpperCase();
+
+      if (Object.values(OrderStatus).includes(upper as OrderStatus)) {
+        where = { status: upper as OrderStatus };
+      } else {
+        // Si quieres buscar por cliente o trip por nombre, aquí puedes ampliarlo.
+        // Por ahora, si no coincide con enum, no filtramos (o podrías regresar vacío).
+        where = undefined;
+      }
+    }
 
     const [total, data] = await Promise.all([
       this.prisma.order.count({ where }),
@@ -37,7 +48,11 @@ export class OrdersService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { client: true, trip: true, orderItems: true },
+        include: {
+          client: true,
+          trip: true,
+          items: true, // <-- en tu Prisma se llama items, NO orderItems
+        },
       }),
     ]);
 
@@ -47,14 +62,21 @@ export class OrdersService {
   findOne(id: string) {
     return this.prisma.order.findUnique({
       where: { id },
-      include: { client: true, trip: true, orderItems: true },
+      include: {
+        client: true,
+        trip: true,
+        items: true, // <-- en tu Prisma se llama items
+      },
     });
   }
 
   update(id: string, dto: UpdateOrderDto) {
     return this.prisma.order.update({
       where: { id },
-      data: dto,
+      data: {
+        // si luego agregas más campos al dto, los agregas aquí
+        status: dto.status,
+      },
     });
   }
 

@@ -6,7 +6,6 @@ import { UsersModule } from './users/users.module';
 import { ClientsModule } from './clients/clients.module';
 import { TripsModule } from './trips/trips.module';
 import { OrdersModule } from './orders/orders.module';
-import { GlobalSettingsModule } from './global-settings/global-settings.module';
 import { ProductsModule } from './products/products.module';
 import { ItemsModule } from './items/items.module';
 
@@ -23,7 +22,6 @@ import { ItemsModule } from './items/items.module';
     ClientsModule,
     TripsModule,
     OrdersModule,
-    GlobalSettingsModule,
     ProductsModule,
     ItemsModule,
   ],

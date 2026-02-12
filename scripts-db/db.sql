@@ -255,3 +255,94 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 ALTER TABLE "trips"
 ADD COLUMN IF NOT EXISTS "image_path" TEXT;
+
+
+-- 1) Crear enum TripPhase si no existe
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'TripPhase') THEN
+    CREATE TYPE "TripPhase" AS ENUM ('PLANNING', 'OPEN', 'SHOPPING', 'CLOSED');
+  END IF;
+END $$;
+
+-- 2) Si aún existe trips.status (enum viejo) y NO existe trips.phase, renombrar status -> phase
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='trips' AND column_name='status'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='trips' AND column_name='phase'
+  ) THEN
+    ALTER TABLE "trips" RENAME COLUMN "status" TO "phase";
+  END IF;
+END $$;
+
+-- 3) Quitar DEFAULT de phase (para poder cambiar el tipo sin error)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='trips' AND column_name='phase'
+  ) THEN
+    ALTER TABLE "trips" ALTER COLUMN "phase" DROP DEFAULT;
+  END IF;
+END $$;
+
+-- 4) Cambiar el tipo de phase a TripPhase (con cast via text)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='trips' AND column_name='phase'
+  ) THEN
+    ALTER TABLE "trips"
+      ALTER COLUMN "phase" TYPE "TripPhase"
+      USING ("phase"::text::"TripPhase");
+  END IF;
+END $$;
+
+-- 5) Volver a poner DEFAULT a phase
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='trips' AND column_name='phase'
+  ) THEN
+    ALTER TABLE "trips" ALTER COLUMN "phase" SET DEFAULT 'PLANNING';
+  END IF;
+END $$;
+
+-- 6) Agregar columna status (ACTIVE/INACTIVE) si no existe
+ALTER TABLE "trips"
+  ADD COLUMN IF NOT EXISTS "status" VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+
+-- 7) Agregar image_path si no existe
+ALTER TABLE "trips"
+  ADD COLUMN IF NOT EXISTS "image_path" TEXT;
+
+
+ALTER TABLE "users"
+  ADD COLUMN IF NOT EXISTS "google_id" VARCHAR(255);
+
+-- Si quieres que sea único (recomendado para Google login):
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_indexes
+    WHERE schemaname='public' AND indexname='users_google_id_key'
+  ) THEN
+    CREATE UNIQUE INDEX "users_google_id_key" ON "users" ("google_id");
+  END IF;
+END $$;
+
+
+ALTER TABLE "products"
+  ADD COLUMN IF NOT EXISTS "stock" INTEGER NOT NULL DEFAULT 0;
+
+
+ALTER TABLE "clients"
+  ADD COLUMN IF NOT EXISTS "phone" VARCHAR(30);

@@ -11,7 +11,7 @@ datasource db {
 // ENUMS
 // ==========================================
 
-enum TripStatus {
+enum TripPhase {
   PLANNING
   OPEN
   SHOPPING
@@ -34,6 +34,7 @@ model User {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email         String   @unique @db.VarChar(255)
   fullName      String?  @map("full_name") @db.VarChar(100)
+  googleId      String?  @unique @map("google_id") @db.VarChar(255) // ✅
   role          String?  @default("CLIENT") @db.VarChar(20)
   isGlobalAdmin Boolean  @default(false) @map("is_global_admin")
 
@@ -45,19 +46,19 @@ model User {
   @@map("users")
 }
 
+
 model Client {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name      String   @db.VarChar(100)
+  phone     String?  @db.VarChar(30) // ✅
 
   userId    String?  @map("user_id") @db.Uuid
   user      User?    @relation(fields: [userId], references: [id])
-
   orders    Order[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([userId])
   @@map("clients")
 }
 
@@ -147,15 +148,21 @@ model ExpenseCategory {
 // ==========================================
 
 model Trip {
-  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name      String
-  status    TripStatus @default(PLANNING)
 
-  imagePath String?    @map("image_path") // ✅ RE-AGREGAR
+  // ✅ como antes (no te rompe tu código)
+  status    String   @default("ACTIVE") @db.VarChar(20)
 
-  startDate DateTime?  @map("start_date") @db.Date
-  endDate   DateTime?  @map("end_date")   @db.Date
+  // ✅ nuevo: flujo real del viaje
+  phase     TripPhase @default(PLANNING)
 
+  imagePath String?  @map("image_path")
+
+  startDate DateTime? @map("start_date") @db.Date
+  endDate   DateTime? @map("end_date")   @db.Date
+
+  // relaciones...
   exchangeRules TripExchangeRule[]
   productFees   TripProductFee[]
   shippingRates TripShippingRate[]
@@ -266,6 +273,8 @@ model Product {
   defaultCategory String?  @map("default_category")
   isActive        Boolean  @default(true) @map("is_active")
 
+  stock           Int      @default(0) // ✅
+
   productTypeId   String?  @map("product_type_id") @db.Uuid
   productType     ProductType? @relation(fields: [productTypeId], references: [id])
 
@@ -278,6 +287,7 @@ model Product {
   @@index([productTypeId])
   @@map("products")
 }
+
 
 // ==========================================
 // 6) PEDIDOS + PAGOS + ITEMS (LOCK EN PRIMER PAGO)
