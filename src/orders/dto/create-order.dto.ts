@@ -1,14 +1,11 @@
-import { OrderStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty } from 'class-validator';
 
 export class CreateOrderDto {
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   tripId: string;
 
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   clientId: string;
-
-  @IsOptional()
-  @IsEnum(OrderStatus)
-  status?: OrderStatus;
 }
