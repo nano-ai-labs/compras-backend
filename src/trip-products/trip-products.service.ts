@@ -19,7 +19,7 @@ export class TripProductsService {
     }
 
     // Obtener precio por defecto si no se proporciona
-    const product = await this.prisma.products.findUnique({ where: { id: productId } });
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
     const price = base_price_usd || product.default_price_usd;
 
     return await this.prisma.trip_products.create({

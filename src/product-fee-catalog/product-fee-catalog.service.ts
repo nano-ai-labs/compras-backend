@@ -9,7 +9,7 @@ export class ProductFeeCatalogService {
 
   async create(data: CreateProductFeeCatalogDto) {
     try {
-      return await this.prisma.product_fee_catalog.create({ data });
+      return await this.prisma.productFeeCatalog.create({ data });
     } catch (error) {
       // Manejo de errores (ej. código duplicado)
       throw new Error('Error creando el producto: ' + error.message);
@@ -17,21 +17,21 @@ export class ProductFeeCatalogService {
   }
 
   async findAll() {
-    return this.prisma.product_fee_catalog.findMany();
+    return this.prisma.productFeeCatalog.findMany();
   }
 
   async findOne(id: string) {
-    return this.prisma.product_fee_catalog.findUnique({ where: { id } });
+    return this.prisma.productFeeCatalog.findUnique({ where: { id } });
   }
 
   async update(id: string, data: UpdateProductFeeCatalogDto) {
-    return this.prisma.product_fee_catalog.update({
+    return this.prisma.productFeeCatalog.update({
       where: { id },
       data,
     });
   }
 
   async remove(id: string) {
-    return this.prisma.product_fee_catalog.delete({ where: { id } });
+    return this.prisma.productFeeCatalog.delete({ where: { id } });
   }
 }

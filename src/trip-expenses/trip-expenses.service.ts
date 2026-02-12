@@ -12,7 +12,7 @@ export class TripExpensesService {
 
     const convertedAmount = amount_usd ? amount_usd * exchange_rate_base : 0;
 
-    const newExpense = await this.prisma.trip_expenses.create({
+    const newExpense = await this.prisma.tripExpense.create({
       data: {
         trip_id,
         category_id,
@@ -23,7 +23,7 @@ export class TripExpensesService {
 
     if (file) {
       const receiptUrl = await this.gcsService.uploadFile(file, 'expenses');
-      await this.prisma.trip_expenses.update({
+      await this.prisma.tripExpense.update({
         where: { id: newExpense.id },
         data: { receipt_url: receiptUrl },
       });
@@ -33,6 +33,6 @@ export class TripExpensesService {
   }
 
   async findAllByTrip(tripId: string) {
-    return this.prisma.trip_expenses.findMany({ where: { trip_id: tripId } });
+    return this.prisma.tripExpense.findMany({ where: { trip_id: tripId } });
   }
 }

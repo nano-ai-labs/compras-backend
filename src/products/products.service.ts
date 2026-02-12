@@ -14,7 +14,7 @@ export class ProductsService {
       data.image_url = imageUrl;
     }
 
-    return await this.prisma.products.create({
+    return await this.prisma.product.create({
       data,
     });
   }
@@ -25,7 +25,7 @@ export class ProductsService {
       data.image_url = imageUrl;
     }
 
-    return await this.prisma.products.update({
+    return await this.prisma.product.update({
       where: { id },
       data,
     });

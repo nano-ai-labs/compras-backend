@@ -1,3 +1,4 @@
+export class OrderItemsService {
 async getItemBreakdown(order_item_id: string) {
     const orderItem = await this.prisma.order_items.findUnique({
       where: { id: order_item_id },
