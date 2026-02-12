@@ -10,7 +10,7 @@ export class ExchangeRatesService {
     today.setHours(0, 0, 0, 0);
 
     // Busca el tipo de cambio de hoy
-    const existingRate = await this.prisma.exchange_rates.findUnique({
+    const existingRate = await this.prisma.exchangeRate.findUnique({
       where: { date: today },
     });
 
@@ -22,7 +22,7 @@ export class ExchangeRatesService {
     const newRate = await this.fetchNewRate() || 20.0;  // Valor por defecto si la API falla
 
     // Crear registro en base de datos
-    return await this.prisma.exchange_rates.create({
+    return await this.prisma.exchangeRate.create({
       data: {
         date: today,
         rate_mxn: newRate,

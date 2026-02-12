@@ -9,28 +9,28 @@ export class ExpenseCategoriesService {
 
   async create(data: CreateExpenseCategoriesDto) {
     try {
-      return await this.prisma.expense_categories.create({ data });
+      return await this.prisma.expenseCategory.create({ data });
     } catch (error) {
       throw new Error('Error creando la categoría de gasto: ' + error.message);
     }
   }
 
   async findAll() {
-    return this.prisma.expense_categories.findMany();
+    return this.prisma.expenseCategory.findMany();
   }
 
   async findOne(id: string) {
-    return this.prisma.expense_categories.findUnique({ where: { id } });
+    return this.prisma.expenseCategory.findUnique({ where: { id } });
   }
 
   async update(id: string, data: UpdateExpenseCategoriesDto) {
-    return this.prisma.expense_categories.update({
+    return this.prisma.expenseCategory.update({
       where: { id },
       data,
     });
   }
 
   async remove(id: string) {
-    return this.prisma.expense_categories.delete({ where: { id } });
+    return this.prisma.expenseCategory.delete({ where: { id } });
   }
 }

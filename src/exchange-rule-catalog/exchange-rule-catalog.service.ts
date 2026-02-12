@@ -9,28 +9,28 @@ export class ExchangeRuleCatalogService {
 
   async create(data: CreateExchangeRuleCatalogDto) {
     try {
-      return await this.prisma.exchange_rule_catalog.create({ data });
+      return await this.prisma.exchangeRuleCatalog.create({ data });
     } catch (error) {
       throw new Error('Error creando la regla de cambio: ' + error.message);
     }
   }
 
   async findAll() {
-    return this.prisma.exchange_rule_catalog.findMany();
+    return this.prisma.exchangeRuleCatalog.findMany();
   }
 
   async findOne(id: string) {
-    return this.prisma.exchange_rule_catalog.findUnique({ where: { id } });
+    return this.prisma.exchangeRuleCatalog.findUnique({ where: { id } });
   }
 
   async update(id: string, data: UpdateExchangeRuleCatalogDto) {
-    return this.prisma.exchange_rule_catalog.update({
+    return this.prisma.exchangeRuleCatalog.update({
       where: { id },
       data,
     });
   }
 
   async remove(id: string) {
-    return this.prisma.exchange_rule_catalog.delete({ where: { id } });
+    return this.prisma.exchangeRuleCatalog.delete({ where: { id } });
   }
 }
