@@ -1,5 +1,6 @@
 FROM node:20-alpine
-
+# ESTA LÍNEA ES VITAL:
+RUN apk add --no-cache openssl libc6-compat
 WORKDIR /app
 
 COPY package*.json ./
