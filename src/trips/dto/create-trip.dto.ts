@@ -7,9 +7,9 @@ export class CreateTripDto {
 
   @IsString()
   @IsNotEmpty()
-  start_date: string;
+  startDate: string;
 
   @IsString()
   @IsNotEmpty()
-  end_date: string;
-}
+  endDate: string;
+}  @IsOptional()\n  @IsString()\n  status?: string;

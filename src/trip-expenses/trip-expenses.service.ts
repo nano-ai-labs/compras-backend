@@ -8,15 +8,15 @@ export class TripExpensesService {
   constructor(private readonly prisma: PrismaService, private readonly gcsService: GcsService) {}
 
   async create(data: CreateTripExpenseDto, file: Express.Multer.File) {
-    const { trip_id, category_id, amount_usd, exchange_rate_base } = data;
+    const { tripId, categoryId, amount_usd, exchangeRate_base } = data;
 
-    const convertedAmount = amount_usd ? amount_usd * exchange_rate_base : 0;
+    const convertedAmount = amount_usd ? amount_usd * exchangeRate_base : 0;
 
     const newExpense = await this.prisma.tripExpense.create({
       data: {
-        trip_id,
-        category_id,
-        amount_mxn: convertedAmount,
+        tripId,
+        categoryId,
+        amountMxn: convertedAmount,
         amount_usd,
       },
     });
@@ -25,7 +25,7 @@ export class TripExpensesService {
       const receiptUrl = await this.gcsService.uploadFile(file, 'expenses');
       await this.prisma.tripExpense.update({
         where: { id: newExpense.id },
-        data: { receipt_url: receiptUrl },
+        data: { receiptUrl: receiptUrl },
       });
     }
 
@@ -33,6 +33,6 @@ export class TripExpensesService {
   }
 
   async findAllByTrip(tripId: string) {
-    return this.prisma.tripExpense.findMany({ where: { trip_id: tripId } });
+    return this.prisma.tripExpense.findMany({ where: { tripId: tripId } });
   }
 }

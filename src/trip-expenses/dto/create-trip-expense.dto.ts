@@ -3,11 +3,11 @@ import { IsString, IsNotEmpty, IsOptional, IsNumber } from 'class-validator';
 export class CreateTripExpenseDto {
   @IsString()
   @IsNotEmpty()
-  trip_id: string;
+  tripId: string;
 
   @IsString()
   @IsNotEmpty()
-  category_id: string;
+  categoryId: string;
 
   @IsOptional()
   @IsNumber()
@@ -15,5 +15,5 @@ export class CreateTripExpenseDto {
 
   @IsOptional()
   @IsNumber()
-  exchange_rate_base?: number;
+  exchangeRate_base?: number;
 }

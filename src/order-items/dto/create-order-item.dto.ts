@@ -3,9 +3,9 @@ import { IsString, IsNotEmpty } from 'class-validator';
 export class CreateOrderItemDto {
   @IsString()
   @IsNotEmpty()
-  order_id: string;
+  orderId: string;
 
   @IsString()
   @IsNotEmpty()
-  product_id: string;
+  productId: string;
 }

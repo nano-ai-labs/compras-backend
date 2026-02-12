@@ -8,37 +8,37 @@ export class OrderPaymentsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async recordPayment(data: CreateOrderPaymentDto) {
-    const { order_id, amount_mxn } = data;
+    const { orderId, amountMxn } = data;
 
     // Verificar si el pedido existe
-    const order = await this.prisma.order.findUnique({ where: { id: order_id } });
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new Error('Order not found.');
 
     const totalPayments = await this.prisma.orderPayment.aggregate({
-      where: { order_id },
-      _sum: { amount_mxn: true },
+      where: { orderId },
+      _sum: { amountMxn: true },
     });
 
-    const newTotal = totalPayments._sum.amount_mxn ? totalPayments._sum.amount_mxn.add(new Decimal(amount_mxn)) : new Decimal(amount_mxn);
+    const newTotal = totalPayments._sum.amountMxn ? totalPayments._sum.amountMxn.add(new Decimal(amountMxn)) : new Decimal(amountMxn);
 
     // Crear el pago
     await this.prisma.orderPayment.create({
       data: {
-        order_id,
-        amount_mxn: new Decimal(amount_mxn),
+        orderId,
+        amountMxn: new Decimal(amountMxn),
       },
     });
 
     // Actualizar el monto total pagado y el estado del pedido
     await this.prisma.order.update({
-      where: { id: order_id },
-      data: { paid_total_mxn: newTotal },
+      where: { id: orderId },
+      data: { paidTotalMxn: newTotal },
     });
 
     // Verificar si se debe actualizar el estado del pedido
-    if (newTotal.gte(order.grand_total_mxn)) {
+    if (newTotal.gte(order.grandTotalMxn)) {
       await this.prisma.order.update({
-        where: { id: order_id },
+        where: { id: orderId },
         data: { status: 'PAID' },
       });
     }

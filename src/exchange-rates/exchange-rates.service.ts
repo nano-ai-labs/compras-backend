@@ -25,7 +25,7 @@ export class ExchangeRatesService {
     return await this.prisma.exchangeRate.create({
       data: {
         date: today,
-        rate_mxn: newRate,
+        rateMxn: newRate,
         source: 'Manual', // o el origen que definas
       },
     });
@@ -37,7 +37,7 @@ export class ExchangeRatesService {
       // Ejemplo: usando fetch para obtener el tipo de cambio
       const response = await fetch('API_URL'); // Cambia por la URL real
       const data = await response.json();
-      return data.rate_mxn; // Ajústalo según la respuesta de la API
+      return data.rateMxn; // Ajústalo según la respuesta de la API
     } catch (error) {
       console.warn('Error obteniendo tipo de cambio:', error);
       return null;

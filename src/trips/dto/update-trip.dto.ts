@@ -7,9 +7,9 @@ export class UpdateTripDto {
 
   @IsOptional()
   @IsString()
-  start_date?: string;
+  startDate?: string;
 
   @IsOptional()
   @IsString()
-  end_date?: string;
-}
+  endDate?: string;
+}  @IsOptional()\n  @IsString()\n  status?: string;

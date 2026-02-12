@@ -3,7 +3,7 @@ import { IsString, IsOptional, IsNumber } from 'class-validator';
 export class UpdateTripExpenseDto {
   @IsOptional()
   @IsString()
-  category_id?: string;
+  categoryId?: string;
 
   @IsOptional()
   @IsNumber()
@@ -11,5 +11,5 @@ export class UpdateTripExpenseDto {
 
   @IsOptional()
   @IsNumber()
-  exchange_rate_base?: number;
+  exchangeRate_base?: number;
 }

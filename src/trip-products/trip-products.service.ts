@@ -10,8 +10,8 @@ export class TripProductsService {
     const { tripId, productId, base_price_usd } = data;
 
     // Verificar si el producto ya existe en el viaje
-    const existing = await this.prisma.trip_products.findUnique({
-      where: { trip_id_product_id: { trip_id: tripId, product_id: productId } },
+    const existing = await this.prisma.tripProduct.findUnique({
+      where: { tripId_productId: { tripId: tripId, productId: productId } },
     });
 
     if (existing) {
@@ -20,12 +20,12 @@ export class TripProductsService {
 
     // Obtener precio por defecto si no se proporciona
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
-    const price = base_price_usd || product.default_price_usd;
+    const price = base_price_usd || product.defaultPriceUsd;
 
-    return await this.prisma.trip_products.create({
+    return await this.prisma.tripProduct.create({
       data: {
-        trip_id: tripId,
-        product_id: productId,
+        tripId: tripId,
+        productId: productId,
         base_price_usd: price,
       },
     });
