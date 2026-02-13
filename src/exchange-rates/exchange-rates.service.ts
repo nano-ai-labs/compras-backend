@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -9,34 +9,45 @@ export class ExchangeRatesService {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
-    // 1. Ver si ya lo tenemos en la DB
+    // 1. Ver si ya existe en la DB para hoy
     const existingRate = await this.prisma.exchangeRate.findUnique({
       where: { date: today },
     });
     if (existingRate) return existingRate;
 
-    // 2. Si no, consultamos Banorte
+    // 2. Intentar obtener el precio real (Banorte primero, Frankfurt después)
     let rate: number | null = null;
-    let source = 'Banorte';
+    let source = '';
 
     try {
-      const res = await fetch("https://dolarapi.com/v1/mexico/cotizaciones/banorte");
+      const res = await fetch("https://dolarapi.com/v1/mexico/cotizaciones/banorte", {
+        signal: AbortSignal.timeout(5000),
+      });
       const data = await res.json();
-      rate = Array.isArray(data) ? data[0].venta : null;
+      const precioVenta = Array.isArray(data) ? data[0].venta : data.venta;
+      if (precioVenta) {
+        rate = precioVenta;
+        source = 'Banorte';
+      }
     } catch (e) {
-      // 3. Respaldo: Frankfurt + Spread de 0.45
+      console.warn("Banorte falló, intentando Frankfurt...");
       try {
         const resF = await fetch("https://api.frankfurter.app/latest?from=USD&to=MXN");
         const dataF = await resF.json();
-        rate = dataF.rates.MXN + 0.45;
-        source = 'Frankfurt + Spread';
+        if (dataF?.rates?.MXN) {
+          rate = dataF.rates.MXN + 0.45; // Spread de seguridad
+          source = 'Frankfurt + Spread';
+        }
       } catch (e2) {
-        rate = 18.00; // Valor de emergencia
-        source = 'Emergency Static';
+        console.error("Ambas APIs de divisas fallaron");
       }
     }
 
-    // 4. Guardar y devolver
+    // 3. VALIDACIÓN ESTRICTA: Solo guardar si tenemos un precio real
+    if (!rate) {
+      throw new ServiceUnavailableException("No se pudo obtener un precio de dólar confiable.");
+    }
+
     return this.prisma.exchangeRate.create({
       data: {
         date: today,
