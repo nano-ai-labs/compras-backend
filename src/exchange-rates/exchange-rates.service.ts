@@ -5,42 +5,31 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ExchangeRatesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getOrUpdateTodayRate() {
+  async getTodayRate() {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
-    // Busca el tipo de cambio de hoy
+    return this.prisma.exchangeRate.findUnique({
+      where: { date: today },
+    });
+  }
+
+  async saveRateIfNew(rate: number) {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
     const existingRate = await this.prisma.exchangeRate.findUnique({
       where: { date: today },
     });
 
-    if (existingRate) {
-      return existingRate;
-    }
+    if (existingRate) return existingRate;
 
-    // Si no existe, obtener el tipo de cambio de una API externa o usar un valor por defecto
-    const newRate = await this.fetchNewRate() || 20.0;  // Valor por defecto si la API falla
-
-    // Crear registro en base de datos
-    return await this.prisma.exchangeRate.create({
+    return this.prisma.exchangeRate.create({
       data: {
         date: today,
-        rateMxn: newRate,
-        source: 'Manual', // o el origen que definas
+        rateMxn: rate,
+        source: 'Banorte - Automatic',
       },
     });
-  }
-
-  private async fetchNewRate() {
-    try {
-      // Lógica para llamar a la API externa
-      // Ejemplo: usando fetch para obtener el tipo de cambio
-      const response = await fetch('API_URL'); // Cambia por la URL real
-      const data = await response.json();
-      return data.rateMxn; // Ajústalo según la respuesta de la API
-    } catch (error) {
-      console.warn('Error obteniendo tipo de cambio:', error);
-      return null;
-    }
   }
 }
