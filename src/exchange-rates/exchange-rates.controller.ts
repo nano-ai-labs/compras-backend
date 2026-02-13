@@ -1,16 +1,21 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { ExchangeRatesService } from './exchange-rates.service';
-import { JwtAuthGuard } from '../auth/jwt.guard';
+import { JwtAuthGuard } from '../auth/jwt.guard'; // 🔑 Tu guard que ya funciona
 
 @UseGuards(JwtAuthGuard)
 @Controller('exchange-rates')
 export class ExchangeRatesController {
-  constructor(private readonly exchangeRatesService: ExchangeRatesService) {}
+  constructor(private readonly service: ExchangeRatesService) {}
 
+  // Este lo llama el SiteLayout (Server Component)
   @Get('today')
   async getToday() {
-    // Si el service lanza ServiceUnavailableException, NestJS devuelve automáticamente un 503
-    const result = await this.exchangeRatesService.getOrUpdateTodayRate();
-    return { ok: true, usd_mxn: result.rateMxn };
+    return this.service.getTodayFromDb();
+  }
+
+  // Este lo llama el SiteLayoutClient (vía /api/fx)
+  @Post('sync')
+  async sync(@Body('rate') rate: number) {
+    return this.service.saveRate(rate);
   }
 }
