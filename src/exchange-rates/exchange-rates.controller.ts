@@ -1,9 +1,9 @@
 import { Controller, Post, Body, Get, UseGuards } from '@nestjs/common';
 import { ExchangeRatesService } from './exchange-rates.service';
-import { JwtAuthGuard } from '../auth/jwt.guard'; // ✅ Ruta corregida según tu TripsController
+import { JwtAuthGuard } from '../auth/jwt.guard'; // ✅ Coincide con TripsController
 
+@UseGuards(JwtAuthGuard)
 @Controller('exchange-rates')
-@UseGuards(JwtAuthGuard) // 🛡️ Ahora sí coincide con el resto de tu app
 export class ExchangeRatesController {
   constructor(private readonly exchangeRatesService: ExchangeRatesService) {}
 
@@ -17,4 +17,3 @@ export class ExchangeRatesController {
     return this.exchangeRatesService.getTodayRate();
   }
 }
-
