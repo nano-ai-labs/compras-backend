@@ -9,8 +9,8 @@ export class ExchangeRatesController {
 
   @Get('today')
   async getToday() {
+    // Si el service lanza ServiceUnavailableException, NestJS devuelve automáticamente un 503
     const result = await this.exchangeRatesService.getOrUpdateTodayRate();
-    // Devolvemos el formato que el frontend espera
     return { ok: true, usd_mxn: result.rateMxn };
   }
 }
