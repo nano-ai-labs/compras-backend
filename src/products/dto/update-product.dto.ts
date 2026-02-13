@@ -1,27 +1,24 @@
-import { IsString, IsOptional, IsNumber, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsUUID, Matches, IsNotEmpty } from 'class-validator';
 
 export class UpdateProductDto {
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
   name?: string;
 
   @IsOptional()
+  @Matches(/^[0-9]+(\.[0-9]{1,2})?$/, { message: 'defaultPriceUsd inválido' })
+  defaultPriceUsd?: string;
+
+  @IsOptional()
+  @Matches(/^\d+$/, { message: 'stock inválido' })
+  stock?: string;
+
+  @IsOptional()
+  @IsUUID()
+  productTypeId?: string;
+
+  @IsOptional()
   @IsString()
-  image_url?: string;
-
-  @IsOptional()
-  @IsNumber()
-  default_price_usd?: number;
-
-  @IsOptional()
-  @IsNumber()
-  stock?: number;
-
-  @IsOptional()
-  @IsString()
-  product_type_id?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  is_active?: boolean;
+  isActive?: string; // "true" | "false"
 }
