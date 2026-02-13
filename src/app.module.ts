@@ -8,13 +8,15 @@ import { TripsModule } from './trips/trips.module';
 import { OrdersModule } from './orders/orders.module';
 import { ProductsModule } from './products/products.module';
 import { ItemsModule } from './items/items.module';
+// 🔑 IMPORTANTE: Agregar la importación del nuevo módulo
+import { ExchangeRatesModule } from './exchange-rates/exchange-rates.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true,      // 🔑 permite usar ConfigService en todo el proyecto
-      envFilePath: '.env',// 🔑 fuerza a leer .env desde la raíz
-      cache: true,        // ⚡ mejora rendimiento
+      isGlobal: true,      
+      envFilePath: '.env',
+      cache: true,        
     }),
     PrismaModule,
     AuthModule,
@@ -24,6 +26,8 @@ import { ItemsModule } from './items/items.module';
     OrdersModule,
     ProductsModule,
     ItemsModule,
+    // 🔑 IMPORTANTE: Registrarlo aquí para que las rutas /exchange-rates funcionen
+    ExchangeRatesModule, 
   ],
 })
 export class AppModule {}
