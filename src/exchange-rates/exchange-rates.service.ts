@@ -5,33 +5,43 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ExchangeRatesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getTodayRate() {
-    // Definimos el inicio del día en UTC para evitar desfases
+  async getOrUpdateTodayRate() {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
-    return this.prisma.exchangeRate.findUnique({
-      where: { date: today },
-    });
-  }
-
-  async saveRateIfNew(rate: number) {
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-
+    // 1. Ver si ya lo tenemos en la DB
     const existingRate = await this.prisma.exchangeRate.findUnique({
       where: { date: today },
     });
-
-    // Si ya existe registro de hoy, lo devolvemos sin crear otro
     if (existingRate) return existingRate;
 
-    // Si no existe, lo creamos
+    // 2. Si no, consultamos Banorte
+    let rate: number | null = null;
+    let source = 'Banorte';
+
+    try {
+      const res = await fetch("https://dolarapi.com/v1/mexico/cotizaciones/banorte");
+      const data = await res.json();
+      rate = Array.isArray(data) ? data[0].venta : null;
+    } catch (e) {
+      // 3. Respaldo: Frankfurt + Spread de 0.45
+      try {
+        const resF = await fetch("https://api.frankfurter.app/latest?from=USD&to=MXN");
+        const dataF = await resF.json();
+        rate = dataF.rates.MXN + 0.45;
+        source = 'Frankfurt + Spread';
+      } catch (e2) {
+        rate = 18.00; // Valor de emergencia
+        source = 'Emergency Static';
+      }
+    }
+
+    // 4. Guardar y devolver
     return this.prisma.exchangeRate.create({
       data: {
         date: today,
         rateMxn: rate,
-        source: 'Banorte - Automatic Sync',
+        source: source,
       },
     });
   }
