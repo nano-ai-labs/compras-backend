@@ -320,9 +320,7 @@ model TripProduct {
 model Product {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
 
-  // name = detalle: "Logo Spiderman", "Con perlas", etc.
   name            String   @db.VarChar(255)
-
   imageUrl        String?  @map("image_url")
 
   defaultPriceUsd Decimal? @map("default_price_usd") @db.Decimal(10,2)
@@ -335,7 +333,7 @@ model Product {
   productTypeId   String   @map("product_type_id") @db.Uuid
   productType     ProductType @relation(fields: [productTypeId], references: [id])
 
-  // ✅ visible (Playera, Pantalón, etc) ligado al tipo
+  // ✅ visible (Playera, Short, etc)
   productVariantId String  @map("product_variant_id") @db.Uuid
   productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
 
