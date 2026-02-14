@@ -1,27 +1,29 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
+import { IsInt, IsNotEmpty, IsString, IsUUID, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateProductDto {
-  // ✅ para casar Product con TripProduct al crear
-  @IsUUID()
-  tripId: string;
-
   @IsString()
   @IsNotEmpty()
   name: string;
 
-  // Decimal en string: "10", "10.5", "10.50"
-  @Matches(/^[0-9]+(\.[0-9]{1,2})?$/, { message: 'defaultPriceUsd inválido' })
+  @IsString()
+  @IsNotEmpty()
   defaultPriceUsd: string;
 
-  // multipart llega como string
-  @Matches(/^\d+$/, { message: 'stock inválido' })
-  stock: string;
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  stock: number;
 
   @IsUUID()
   productTypeId: string;
 
-  // opcional, pero en tu FE lo mandamos "true"
-  @IsOptional()
-  @IsString()
-  isActive?: string; // "true" | "false"
+  @IsUUID()
+  productVariantId: string;
+
+  @IsUUID()
+  brandId: string;
+
+  @IsUUID()
+  colorId: string;
 }
