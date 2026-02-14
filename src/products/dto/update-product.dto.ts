@@ -1,22 +1,36 @@
-import { IsOptional, IsString, IsUUID, Matches, IsNotEmpty } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class UpdateProductDto {
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
   name?: string;
 
   @IsOptional()
-  @Matches(/^[0-9]+(\.[0-9]{1,2})?$/, { message: 'defaultPriceUsd inválido' })
+  @IsString()
   defaultPriceUsd?: string;
 
   @IsOptional()
-  @Matches(/^\d+$/, { message: 'stock inválido' })
-  stock?: string;
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(0)
+  stock?: number;
 
   @IsOptional()
   @IsUUID()
   productTypeId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  productVariantId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  brandId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  colorId?: string;
 
   @IsOptional()
   @IsString()
