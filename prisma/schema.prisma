@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  //url      = env("DATABASE_URL")
+  // url = env("DATABASE_URL")
 }
 
 // ==========================================
@@ -19,10 +19,10 @@ enum TripPhase {
 }
 
 enum OrderStatus {
-  DRAFT        // cotización viva (sin pagos)
-  CONFIRMED    // ya hubo primer pago -> dólar congelado
+  DRAFT
+  CONFIRMED
   PURCHASED
-  PAID         // 100% pagado (paidTotalMxn >= grandTotalMxn)
+  PAID
   DELIVERED
 }
 
@@ -34,31 +34,34 @@ model User {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email         String   @unique @db.VarChar(255)
   fullName      String?  @map("full_name") @db.VarChar(100)
-  googleId      String?  @unique @map("google_id") @db.VarChar(255) // ✅
+
+  googleId      String?  @unique @map("google_id") @db.VarChar(255)
+
   role          String?  @default("CLIENT") @db.VarChar(20)
   isGlobalAdmin Boolean  @default(false) @map("is_global_admin")
 
   clients       Client[]
 
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@map("users")
 }
 
-
 model Client {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name      String   @db.VarChar(100)
-  phone     String?  @db.VarChar(30) // ✅
+
+  phone     String?  @db.VarChar(30)
 
   userId    String?  @map("user_id") @db.Uuid
   user      User?    @relation(fields: [userId], references: [id])
   orders    Order[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
+  @@index([userId])
   @@map("clients")
 }
 
@@ -70,10 +73,10 @@ model ExchangeRate {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   date      DateTime @unique @db.Date
   rateMxn   Decimal  @map("rate_mxn") @db.Decimal(10,2)
-  source    String?  @db.VarChar(30) // "BANXICO" | "MANUAL"
+  source    String?  @db.VarChar(30)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@map("exchange_rates")
 }
@@ -82,79 +85,131 @@ model ExchangeRate {
 // 3) CATÁLOGOS (IDENTIDAD + NOMBRE EDITABLE)
 // ==========================================
 
-// Fees SIEMPRE % (catalogo = identidad, trip = valor)
 model ProductFeeCatalog {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code      String   @unique @db.VarChar(50)  // "COMMISSION", "TAX" (estable)
-  name      String   @db.VarChar(100)         // editable
+  code      String   @unique @db.VarChar(50)
+  name      String   @db.VarChar(100)
   enabled   Boolean  @default(true)
 
   tripFees  TripProductFee[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@map("product_fee_catalog")
 }
 
-// Exchange rules son fijos MXN por USD (catalogo = identidad, trip = valor)
 model ExchangeRuleCatalog {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code      String   @unique @db.VarChar(50)  // "SERVICE_FEE", "RISK" (estable)
-  name      String   @db.VarChar(100)         // editable
+  code      String   @unique @db.VarChar(50)
+  name      String   @db.VarChar(100)
   enabled   Boolean  @default(true)
 
   tripRules TripExchangeRule[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@map("exchange_rule_catalog")
 }
 
-// Tipos de producto (para envío fijo por tipo)
+// ✅ ProductType = categoría logística / tarifa base (según tu INSERT)
 model ProductType {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code      String   @unique @db.VarChar(50)  // "CLOTHING", "ELECTRONICS" (estable)
-  name      String   @db.VarChar(100)         // editable
+  code      String   @unique @db.VarChar(50)   // "KIDS_CLOTHING", ...
+  name      String   @db.VarChar(100)          // "Ropa de Niños (70)"
+  enabled   Boolean  @default(true)
+
+  // relaciones
+  variants          ProductVariant[]
+  products          Product[]
+  tripShippingRates TripShippingRate[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@map("product_types")
+}
+
+// ✅ NUEVO: Variantes visibles por tipo (ej: Playera/Pantalón para KIDS_CLOTHING)
+model ProductVariant {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productTypeId String   @map("product_type_id") @db.Uuid
+
+  code          String   @db.VarChar(50)   // "TSHIRT", "PANTS"
+  name          String   @db.VarChar(120)  // "Playera", "Pantalón"
+  enabled       Boolean  @default(true)
+
+  productType   ProductType @relation(fields: [productTypeId], references: [id], onDelete: Cascade)
+  products      Product[]
+
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@unique([productTypeId, code])
+  @@index([productTypeId])
+  @@map("product_variants")
+}
+
+// ✅ NUEVO: Catálogo de marcas
+model Brand {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String   @unique @db.VarChar(50) // "NIKE", "GUESS"
+  name      String   @db.VarChar(100)        // "Nike", "Guess"
   enabled   Boolean  @default(true)
 
   products  Product[]
-  tripShippingRates TripShippingRate[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
-  @@map("product_types")
+  @@map("brands")
+}
+
+// ✅ NUEVO: Catálogo de colores
+model Color {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code      String   @unique @db.VarChar(50) // "RED", "BLACK"
+  name      String   @db.VarChar(100)        // "Rojo", "Negro"
+  enabled   Boolean  @default(true)
+
+  hex       String?  @db.VarChar(10)         // "#FF0000" opcional para UI
+
+  products  Product[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@map("colors")
 }
 
 // Gastos operativos agrupados por tipo
 model ExpenseCategory {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code      String   @unique @db.VarChar(50)  // "FLIGHTS", "FOOD"
+  code      String   @unique @db.VarChar(50)
   name      String   @db.VarChar(100)
   enabled   Boolean  @default(true)
 
   expenses  TripExpense[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@map("expense_categories")
 }
 
 // ==========================================
-// 4) TRIPS + CONFIG (VALORES POR VIAJE + SNAPSHOT DE NOMBRE)
+// 4) TRIPS + CONFIG
 // ==========================================
 
 model Trip {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name      String
 
-  // ✅ como antes (no te rompe tu código)
-  status    String   @default("ACTIVE") @db.VarChar(20)
+  // status operativo (ACTIVE/INACTIVE)
+  status    String    @default("ACTIVE") @db.VarChar(20)
 
-  // ✅ nuevo: flujo real del viaje
+  // fase logística
   phase     TripPhase @default(PLANNING)
 
   imagePath String?  @map("image_path")
@@ -162,7 +217,6 @@ model Trip {
   startDate DateTime? @map("start_date") @db.Date
   endDate   DateTime? @map("end_date")   @db.Date
 
-  // relaciones...
   exchangeRules TripExchangeRule[]
   productFees   TripProductFee[]
   shippingRates TripShippingRate[]
@@ -170,34 +224,33 @@ model Trip {
   orders        Order[]
   expenses      TripExpense[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@map("trips")
 }
 
-
-// Valor por viaje: MXN por USD (+0.30, +0.50...)
+// Valor por viaje: MXN por USD
 model TripExchangeRule {
   id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tripId       String  @map("trip_id") @db.Uuid
   catalogId    String  @map("catalog_id") @db.Uuid
 
   nameSnapshot String  @map("name_snapshot") @db.VarChar(100)
-  valueAdded   Decimal @map("value_added") @db.Decimal(10,2) // MXN por USD
+  valueAdded   Decimal @map("value_added") @db.Decimal(10,2)
 
   trip         Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
   catalog      ExchangeRuleCatalog @relation(fields: [catalogId], references: [id])
 
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@unique([tripId, catalogId])
   @@index([tripId])
   @@map("trip_exchange_rules")
 }
 
-// Valor por viaje: % (25%, 10%...)
+// Valor por viaje: % (fees)
 model TripProductFee {
   id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tripId         String  @map("trip_id") @db.Uuid
@@ -209,36 +262,36 @@ model TripProductFee {
   trip           Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
   catalog        ProductFeeCatalog @relation(fields: [catalogId], references: [id])
 
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@unique([tripId, catalogId])
   @@index([tripId])
   @@map("trip_product_fees")
 }
 
-// Envío fijo MXN por tipo de producto, configurable por viaje
+// Envío fijo MXN por tipo (snapshot)
 model TripShippingRate {
   id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tripId        String  @map("trip_id") @db.Uuid
   productTypeId String  @map("product_type_id") @db.Uuid
 
-  nameSnapshot  String  @map("name_snapshot") @db.VarChar(100) // snapshot del tipo
+  nameSnapshot  String  @map("name_snapshot") @db.VarChar(100)
   costMxn       Decimal @map("cost_mxn") @db.Decimal(12,2)
   enabled       Boolean @default(true)
 
   trip          Trip        @relation(fields: [tripId], references: [id], onDelete: Cascade)
   productType   ProductType @relation(fields: [productTypeId], references: [id])
 
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@unique([tripId, productTypeId])
   @@index([tripId])
   @@map("trip_shipping_rates")
 }
 
-// Productos habilitados para el viaje (y override opcional de precio base USD)
+// Productos habilitados para el viaje (snapshot de precio USD por viaje)
 model TripProduct {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tripId       String   @map("trip_id") @db.Uuid
@@ -250,11 +303,10 @@ model TripProduct {
   trip         Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
   product      Product  @relation(fields: [productId], references: [id])
 
-  // ✅ opposite side of OrderItem.tripProduct
   orderItems   OrderItem[]
 
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@unique([tripId, productId])
   @@index([tripId])
@@ -262,35 +314,54 @@ model TripProduct {
 }
 
 // ==========================================
-// 5) PRODUCTO GLOBAL
+// 5) PRODUCTO GLOBAL (ACTUALIZADO)
 // ==========================================
 
 model Product {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  // name = detalle: "Logo Spiderman", "Con perlas", etc.
   name            String   @db.VarChar(255)
+
   imageUrl        String?  @map("image_url")
+
   defaultPriceUsd Decimal? @map("default_price_usd") @db.Decimal(10,2)
   defaultCategory String?  @map("default_category")
+
   isActive        Boolean  @default(true) @map("is_active")
+  stock           Int      @default(0)
 
-  stock           Int      @default(0) // ✅
+  // ✅ logística/tarifa
+  productTypeId   String   @map("product_type_id") @db.Uuid
+  productType     ProductType @relation(fields: [productTypeId], references: [id])
 
-  productTypeId   String?  @map("product_type_id") @db.Uuid
-  productType     ProductType? @relation(fields: [productTypeId], references: [id])
+  // ✅ visible (Playera, Pantalón, etc) ligado al tipo
+  productVariantId String  @map("product_variant_id") @db.Uuid
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
+
+  // ✅ catálogos
+  brandId         String   @map("brand_id") @db.Uuid
+  brand           Brand    @relation(fields: [brandId], references: [id])
+
+  colorId         String   @map("color_id") @db.Uuid
+  color           Color    @relation(fields: [colorId], references: [id])
 
   tripProducts    TripProduct[]
   orderItems      OrderItem[]
 
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@index([productTypeId])
+  @@index([productVariantId])
+  @@index([brandId])
+  @@index([colorId])
+  @@index([productTypeId, productVariantId, brandId, colorId])
   @@map("products")
 }
 
-
 // ==========================================
-// 6) PEDIDOS + PAGOS + ITEMS (LOCK EN PRIMER PAGO)
+// 6) PEDIDOS + PAGOS + ITEMS
 // ==========================================
 
 model Order {
@@ -302,7 +373,7 @@ model Order {
   grandTotalMxn   Decimal     @default(0) @map("grand_total_mxn") @db.Decimal(14,2)
   paidTotalMxn    Decimal     @default(0) @map("paid_total_mxn") @db.Decimal(14,2)
 
-  pricingLockedAt  DateTime? @map("pricing_locked_at")
+  pricingLockedAt  DateTime? @map("pricing_locked_at") @db.Timestamp(6)
   exchangeRateDate DateTime? @map("exchange_rate_date") @db.Date
   exchangeRateBase Decimal?  @map("exchange_rate_base") @db.Decimal(10,2)
   exchangeRateAdd  Decimal   @default(0) @map("exchange_rate_add") @db.Decimal(10,2)
@@ -314,8 +385,8 @@ model Order {
   payments        OrderPayment[]
   appliedExchangeRules OrderExchangeRule[]
 
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@unique([tripId, clientId])
   @@index([tripId, status])
@@ -328,19 +399,18 @@ model OrderPayment {
   orderId   String   @map("order_id") @db.Uuid
 
   amountMxn Decimal  @map("amount_mxn") @db.Decimal(14,2)
-  method    String   @db.VarChar(20) // CASH, TRANSFER, CARD
+  method    String   @db.VarChar(20)
   reference String?  @db.VarChar(100)
   paidAt    DateTime @map("paid_at") @db.Timestamp(6)
 
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   @@index([orderId])
   @@map("order_payments")
 }
 
-// snapshot de reglas de cambio aplicadas cuando se lockea el pedido
 model OrderExchangeRule {
   id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId      String  @map("order_id") @db.Uuid
@@ -351,7 +421,7 @@ model OrderExchangeRule {
 
   order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  createdAt    DateTime @default(now()) @map("created_at")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   @@index([orderId])
   @@map("order_exchange_rules")
@@ -369,14 +439,11 @@ model OrderItem {
   productName   String   @map("product_name") @db.VarChar(255)
   basePriceUsd  Decimal  @map("base_price_usd") @db.Decimal(10,2)
 
-  // snapshot del tipo para shipping
   productTypeId        String? @map("product_type_id") @db.Uuid
   productTypeSnapshot  String? @map("product_type_snapshot") @db.VarChar(100)
 
   shippingCostMxn Decimal @default(0) @map("shipping_cost_mxn") @db.Decimal(12,2)
-
-  // se fija al lock del pedido
-  finalPriceMxn Decimal @default(0) @map("final_price_mxn") @db.Decimal(14,2)
+  finalPriceMxn  Decimal @default(0) @map("final_price_mxn") @db.Decimal(14,2)
 
   appliedProductFees OrderItemProductFee[]
 
@@ -384,15 +451,14 @@ model OrderItem {
   product     Product?     @relation(fields: [productId], references: [id])
   tripProduct TripProduct? @relation(fields: [tripProductId], references: [id])
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@index([orderId])
   @@index([tripProductId])
   @@map("order_items")
 }
 
-// fee por item (USD unitario) - MXN se calcula con exchange del pedido
 model OrderItemProductFee {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderItemId     String   @map("order_item_id") @db.Uuid
@@ -400,12 +466,11 @@ model OrderItemProductFee {
 
   nameSnapshot    String   @map("name_snapshot") @db.VarChar(100)
   percentageUsed  Decimal  @map("percentage_used") @db.Decimal(5,2)
-
-  amountUsd       Decimal  @map("amount_usd") @db.Decimal(10,2) // unitario
+  amountUsd       Decimal  @map("amount_usd") @db.Decimal(10,2)
 
   orderItem       OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
 
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   @@index([orderItemId])
   @@map("order_item_product_fees")
@@ -420,7 +485,7 @@ model TripExpense {
   tripId      String   @map("trip_id") @db.Uuid
   categoryId  String   @map("category_id") @db.Uuid
 
-  currency    String   @default("MXN") @db.VarChar(3) // MXN|USD
+  currency    String   @default("MXN") @db.VarChar(3)
   amount      Decimal  @db.Decimal(14,2)
 
   exchangeRateBase Decimal? @map("exchange_rate_base") @db.Decimal(10,2)
@@ -433,8 +498,8 @@ model TripExpense {
   trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
   category    ExpenseCategory @relation(fields: [categoryId], references: [id])
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@index([tripId])
   @@map("trip_expenses")
