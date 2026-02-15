@@ -412,3 +412,62 @@ JOIN (
 ) v
 ON v.type_code = pt.code
 ON CONFLICT ("product_type_id", "code") DO NOTHING;
+
+
+-- ============================================================
+-- PRE-REQ: UUID
+-- ============================================================
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ============================================================
+-- 1) CREAR TABLA product_images
+-- ============================================================
+CREATE TABLE IF NOT EXISTS "product_images" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "product_id" UUID NOT NULL REFERENCES "products"("id") ON DELETE CASCADE,
+
+  -- PATH en GCS (antes estaba en products.image_url)
+  "path" TEXT NOT NULL,
+
+  "sort_order" INT NOT NULL DEFAULT 0,
+  "is_primary" BOOLEAN NOT NULL DEFAULT false,
+
+  "created_at" TIMESTAMP(6) NOT NULL DEFAULT now(),
+  "updated_at" TIMESTAMP(6) NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS "idx_product_images_product_id"
+ON "product_images" ("product_id");
+
+CREATE INDEX IF NOT EXISTS "idx_product_images_product_order"
+ON "product_images" ("product_id", "sort_order");
+
+-- Útil si solo quieres 1 principal por producto (no es constraint perfecto sin parcial unique)
+-- Puedes manejarlo desde app. Si quieres el índice parcial único, dímelo.
+
+-- ============================================================
+-- 2) (OPCIONAL) MIGRAR DATA VIEJA products.image_url -> product_images
+--     ANTES de borrar la columna
+-- ============================================================
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='products' AND column_name='image_url'
+  ) THEN
+    INSERT INTO "product_images" ("product_id","path","sort_order","is_primary")
+    SELECT p."id", p."image_url", 0, true
+    FROM "products" p
+    WHERE p."image_url" IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM "product_images" pi
+        WHERE pi."product_id" = p."id"
+      );
+  END IF;
+END $$;
+
+-- ============================================================
+-- 3) BORRAR COLUMNA image_url EN products
+-- ============================================================
+ALTER TABLE "products"
