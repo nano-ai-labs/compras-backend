@@ -317,11 +317,43 @@ model TripProduct {
 // 5) PRODUCTO GLOBAL (ACTUALIZADO)
 // ==========================================
 
+// ==========================================
+// IMÁGENES DE PRODUCTO (1 producto -> N imágenes)
+// ==========================================
+model ProductImage {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+
+  // Guardamos el PATH en GCS (igual que antes hacías con imageUrl)
+  path       String   @db.Text
+
+  // Orden para mostrar galería (0,1,2...)
+  sortOrder  Int      @default(0) @map("sort_order")
+
+  // Marca "principal"
+  isPrimary  Boolean  @default(false) @map("is_primary")
+
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@index([productId])
+  @@index([productId, sortOrder])
+  @@map("product_images")
+}
+
+
+// ==========================================
+// PRODUCTO GLOBAL (sin imageUrl)
+// ==========================================
 model Product {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
 
+  sku             String   @unique @db.VarChar(120)
+
+  // name = detalle: "Logo Spiderman", "Con perlas", etc.
   name            String   @db.VarChar(255)
-  imageUrl        String?  @map("image_url")
 
   defaultPriceUsd Decimal? @map("default_price_usd") @db.Decimal(10,2)
   defaultCategory String?  @map("default_category")
@@ -344,6 +376,9 @@ model Product {
   colorId         String   @map("color_id") @db.Uuid
   color           Color    @relation(fields: [colorId], references: [id])
 
+  // ✅ NUEVO: galería de imágenes
+  images          ProductImage[]
+
   tripProducts    TripProduct[]
   orderItems      OrderItem[]
 
@@ -354,7 +389,7 @@ model Product {
   @@index([productVariantId])
   @@index([brandId])
   @@index([colorId])
-  @@index([productTypeId, productVariantId, brandId, colorId])
+  @@index([brandId, productTypeId, productVariantId, colorId])
   @@map("products")
 }
 
