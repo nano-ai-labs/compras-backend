@@ -350,8 +350,6 @@ model ProductImage {
 model Product {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
 
-  sku             String   @unique @db.VarChar(120)
-
   // name = detalle: "Logo Spiderman", "Con perlas", etc.
   name            String   @db.VarChar(255)
 

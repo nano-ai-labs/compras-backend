@@ -11,7 +11,6 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { MatchProductsDto } from './dto/match-products.dto';
 import { buildMeta } from '../common/pagination';
 import { Prisma } from '@prisma/client';
-import { randomUUID } from 'crypto';
 
 @Injectable()
 export class ProductsService {
@@ -135,12 +134,8 @@ export class ProductsService {
     // -----------------------------
     try {
       await this.prisma.$transaction(async (tx) => {
-        // ✅ sku requerido y unique: lo generamos server-side
-        const sku = `SKU-${Date.now()}-${randomUUID().slice(0, 8)}`;
-
         const created = await tx.product.create({
           data: {
-            sku,
             name: dto.name.trim(),
             defaultPriceUsd: new Prisma.Decimal(dto.defaultPriceUsd),
             stock,
