@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GcsService } from '../storage/gcs.service';
@@ -14,6 +15,8 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly gcs: GcsService,
@@ -69,6 +72,10 @@ export class ProductsService {
   }
 
   async create(dto: CreateProductDto, files: Express.Multer.File[]): Promise<void> {
+    this.logger.log(
+      `POST /products start tripId=${dto.tripId} type=${dto.productTypeId} variant=${dto.productVariantId} brand=${dto.brandId} color=${dto.colorId} files=${files?.length ?? 0}`,
+    );
+
     // -----------------------------
     // Validaciones básicas
     // -----------------------------
@@ -91,6 +98,15 @@ export class ProductsService {
 
     const isActive = this.isTrue(dto.isActive);
 
+    const trip = await this.prisma.trip.findUnique({
+      where: { id: dto.tripId },
+      select: { id: true },
+    });
+    if (!trip) {
+      this.logger.warn(`Trip no encontrado para create product tripId=${dto.tripId}`);
+      throw new NotFoundException('Trip no encontrado');
+    }
+
     // -----------------------------
     // Validaciones integridad catálogo
     // -----------------------------
@@ -110,56 +126,74 @@ export class ProductsService {
       throw new BadRequestException('La variante no pertenece al tipo seleccionado');
     }
 
+    this.logger.log(
+      `Catálogos validados para create product tripId=${dto.tripId} productTypeId=${dto.productTypeId} productVariantId=${dto.productVariantId}`,
+    );
+
     // -----------------------------
     // Transaction: Product + Images + TripProduct
     // -----------------------------
-    await this.prisma.$transaction(async (tx) => {
-      // ✅ sku requerido y unique: lo generamos server-side
-      const sku = `SKU-${Date.now()}-${randomUUID().slice(0, 8)}`;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // ✅ sku requerido y unique: lo generamos server-side
+        const sku = `SKU-${Date.now()}-${randomUUID().slice(0, 8)}`;
 
-      const created = await tx.product.create({
-        data: {
-          sku,
-          name: dto.name.trim(),
-          defaultPriceUsd: new Prisma.Decimal(dto.defaultPriceUsd),
-          stock,
-          isActive,
-
-          productTypeId: dto.productTypeId,
-          productVariantId: dto.productVariantId,
-          brandId: dto.brandId,
-          colorId: dto.colorId,
-        },
-        select: { id: true },
-      });
-
-      // 1) Subir imágenes a GCS y crear ProductImage
-      // Ruta ordenada: trips/{tripId}/products/{productId}/...
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        const folder = `trips/${dto.tripId}/products/${created.id}`;
-        const path = await this.gcs.uploadFile(f, folder);
-
-        await tx.productImage.create({
+        const created = await tx.product.create({
           data: {
+            sku,
+            name: dto.name.trim(),
+            defaultPriceUsd: new Prisma.Decimal(dto.defaultPriceUsd),
+            stock,
+            isActive,
+
+            productTypeId: dto.productTypeId,
+            productVariantId: dto.productVariantId,
+            brandId: dto.brandId,
+            colorId: dto.colorId,
+          },
+          select: { id: true },
+        });
+
+        this.logger.log(`Producto creado id=${created.id} tripId=${dto.tripId}`);
+
+        // 1) Subir imágenes a GCS y crear ProductImage
+        // Ruta ordenada: trips/{tripId}/products/{productId}/...
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const folder = `trips/${dto.tripId}/products/${created.id}`;
+          const path = await this.gcs.uploadFile(f, folder);
+
+          await tx.productImage.create({
+            data: {
+              productId: created.id,
+              path,
+              sortOrder: i,
+              isPrimary: i === 0, // ✅ primera = principal
+            },
+          });
+        }
+
+        this.logger.log(`Imágenes guardadas productId=${created.id} count=${files.length}`);
+
+        // 2) TripProduct snapshot
+        await tx.tripProduct.create({
+          data: {
+            tripId: dto.tripId,
             productId: created.id,
-            path,
-            sortOrder: i,
-            isPrimary: i === 0, // ✅ primera = principal
+            isActive: true,
+            basePriceUsd: new Prisma.Decimal(dto.defaultPriceUsd),
           },
         });
-      }
-
-      // 2) TripProduct snapshot
-      await tx.tripProduct.create({
-        data: {
-          tripId: dto.tripId,
-          productId: created.id,
-          isActive: true,
-          basePriceUsd: new Prisma.Decimal(dto.defaultPriceUsd),
-        },
       });
-    });
+
+      this.logger.log(`POST /products success tripId=${dto.tripId} name=${dto.name}`);
+    } catch (error: any) {
+      this.logger.error(
+        `POST /products failed tripId=${dto.tripId} productTypeId=${dto.productTypeId} productVariantId=${dto.productVariantId} brandId=${dto.brandId} colorId=${dto.colorId} prismaCode=${error?.code ?? 'n/a'} message=${error?.message ?? 'unknown'}`,
+        error?.stack,
+      );
+      throw error;
+    }
   }
 
   async update(id: string, dto: UpdateProductDto, file?: Express.Multer.File): Promise<void> {
