@@ -14,10 +14,7 @@ export class BrandsService {
     const items = await this.prisma.brand.findMany({
       where: {
         enabled: true,
-        OR: [
-          { name: { contains: query, mode: 'insensitive' } },
-          { code: { contains: query, mode: 'insensitive' } },
-        ],
+        name: { contains: query, mode: 'insensitive' },
       },
       take,
       orderBy: { name: 'asc' },

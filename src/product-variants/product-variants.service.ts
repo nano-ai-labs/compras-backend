@@ -15,10 +15,7 @@ export class ProductVariantsService {
       where: {
         enabled: true,
         ...(productTypeId ? { productTypeId } : {}),
-        OR: [
-          { name: { contains: query, mode: 'insensitive' } },
-          { code: { contains: query, mode: 'insensitive' } },
-        ],
+        name: { contains: query, mode: 'insensitive' },
       },
       take,
       orderBy: { name: 'asc' },
