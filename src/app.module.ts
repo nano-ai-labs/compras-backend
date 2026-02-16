@@ -9,9 +9,11 @@ import { OrdersModule } from './orders/orders.module';
 import { ProductsModule } from './products/products.module';
 import { ItemsModule } from './items/items.module';
 import { ExchangeRatesModule } from './exchange-rates/exchange-rates.module';
+import { BrandsModule } from './brands/brands.module';
+import { ColorsModule } from './colors/colors.module';
 
-// ✅ AGREGAR ESTA LÍNEA
 import { ProductTypesModule } from './product-types/product-types.module';
+import { ProductVariantsModule } from './product-variants/product-variants.module';
 
 @Module({
   imports: [
@@ -29,9 +31,10 @@ import { ProductTypesModule } from './product-types/product-types.module';
     ProductsModule,
     ItemsModule,
     ExchangeRatesModule,
-
-    // ✅ REGISTRAR EL MÓDULO AQUÍ
+    BrandsModule,
+    ColorsModule,
     ProductTypesModule,
+    ProductVariantsModule,
   ],
 })
 export class AppModule {}

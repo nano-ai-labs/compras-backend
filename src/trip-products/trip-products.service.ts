@@ -1,35 +1,35 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateTripProductDto } from './dto/create-trip-product.dto';
+import { Prisma } from '@prisma/client';
+import { AttachTripProductDto } from './dto/attach-trip-product.dto';
 
 @Injectable()
 export class TripProductsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async addProductToTrip(dto: CreateTripProductDto) {
-    const { tripId, productId, base_price_usd } = dto;
+  async attach(tripId: string, dto: AttachTripProductDto): Promise<void> {
+    if (!tripId) throw new BadRequestException('tripId requerido');
 
-    const existing = await this.prisma.tripProduct.findUnique({
-      where: { tripId_productId: { tripId, productId } },
-    });
+    const [trip, product] = await Promise.all([
+      this.prisma.trip.findUnique({ where: { id: tripId } }),
+      this.prisma.product.findUnique({ where: { id: dto.productId } }),
+    ]);
 
-    if (existing) {
-      throw new BadRequestException('Este producto ya existe en el viaje.');
-    }
+    if (!trip) throw new NotFoundException('Trip no encontrado');
+    if (!product) throw new NotFoundException('Producto no encontrado');
 
-    const product = await this.prisma.product.findUnique({ where: { id: productId } });
-    if (!product) {
-      throw new NotFoundException('Producto no encontrado');
-    }
+    const basePriceUsd =
+      dto.basePriceUsd && !Number.isNaN(Number(dto.basePriceUsd))
+        ? new Prisma.Decimal(dto.basePriceUsd)
+        : product.defaultPriceUsd ?? null;
 
-    const finalPrice = base_price_usd ?? product.defaultPriceUsd ?? 0;
-
-    return await this.prisma.tripProduct.create({
+    // ✅ @@unique([tripId, productId]) => si existe Prisma lanzará P2002
+    await this.prisma.tripProduct.create({
       data: {
         tripId,
-        productId,
-        // CHANGED: Most likely 'basePriceUsd' based on standard Prisma naming
-        basePriceUsd: finalPrice, 
+        productId: dto.productId,
+        isActive: true,
+        basePriceUsd: basePriceUsd ?? null,
       },
     });
   }
