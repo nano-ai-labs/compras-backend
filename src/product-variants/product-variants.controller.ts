@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { ProductVariantsService } from './product-variants.service';
 
@@ -8,6 +8,8 @@ export class ProductVariantsController {
   constructor(private readonly variants: ProductVariantsService) {}
 
   @Get('search')
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   search(
     @Query('q') q: string,
     @Query('limit') limit?: string,
