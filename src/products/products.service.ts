@@ -3,6 +3,8 @@ import {
   BadRequestException,
   NotFoundException,
   Logger,
+  HttpException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GcsService } from '../storage/gcs.service';
@@ -23,6 +25,24 @@ export class ProductsService {
 
   private isTrue(v?: string) {
     return (v ?? 'true') === 'true';
+  }
+
+  private rethrowWithDetails(error: any, context: string): never {
+    if (error instanceof HttpException) throw error;
+
+    const message = error?.message ?? 'Unknown error';
+    const code = error?.code ?? null;
+
+    this.logger.error(
+      `${context} unexpected error prismaCode=${code ?? 'n/a'} message=${message}`,
+      error?.stack,
+    );
+
+    throw new InternalServerErrorException({
+      message: `${context} failed`,
+      detail: message,
+      code,
+    });
   }
 
   // ✅ prioridad: isPrimary desc, sortOrder asc
@@ -179,6 +199,9 @@ export class ProductsService {
             basePriceUsd: new Prisma.Decimal(dto.defaultPriceUsd),
           },
         });
+      }, {
+        maxWait: 10_000,
+        timeout: 60_000,
       });
 
       this.logger.log(`POST /products success tripId=${dto.tripId} name=${dto.name}`);
@@ -187,7 +210,7 @@ export class ProductsService {
         `POST /products failed tripId=${dto.tripId} productTypeId=${dto.productTypeId} productVariantId=${dto.productVariantId} brandId=${dto.brandId} colorId=${dto.colorId} prismaCode=${error?.code ?? 'n/a'} message=${error?.message ?? 'unknown'}`,
         error?.stack,
       );
-      throw error;
+      this.rethrowWithDetails(error, 'POST /products');
     }
   }
 
