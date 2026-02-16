@@ -12,9 +12,9 @@ export class TripProductsController {
   async attach(
     @Param('tripId') tripId: string,
     @Body() dto: AttachTripProductDto,
-  ): Promise<void> {
+  ) {
     try {
-      await this.svc.attach(tripId, dto);
+      return await this.svc.attach(tripId, dto);
     } catch (e: any) {
       if (e?.code === 'P2002') {
         throw new ConflictException('Ya está agregado a este viaje');
