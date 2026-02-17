@@ -15,6 +15,8 @@ import { ColorsModule } from './colors/colors.module';
 import { ProductTypesModule } from './product-types/product-types.module';
 import { ProductVariantsModule } from './product-variants/product-variants.module';
 import { TripProductsModule } from './trip-products/trip-products.module';
+import { ProductFeeCatalogModule } from './product-fee-catalog/product-fee-catalog.module';
+import { ExchangeRuleCatalogModule } from './exchange-rule-catalog/exchange-rule-catalog.module';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { TripProductsModule } from './trip-products/trip-products.module';
     ProductTypesModule,
     ProductVariantsModule,
     TripProductsModule,
+    ProductFeeCatalogModule,
+    ExchangeRuleCatalogModule,
   ],
 })
 export class AppModule {}

@@ -86,46 +86,95 @@ export class OrdersService {
     const normalizedPhone = normalizePhone(q);
     const codeToken = this.getCodeSearchToken(q);
 
-    const where: Prisma.OrderWhereInput = { tripId };
-    if (q) {
-      const orFilters: Prisma.OrderWhereInput[] = [
-        { client: { name: { contains: q, mode: 'insensitive' } } },
-        { client: { phone: { contains: q, mode: 'insensitive' } } },
-      ];
-      if (normalizedPhone) {
-        orFilters.push({ client: { phoneNormalized: { contains: normalizedPhone } } });
+    const buildWhere = (withNormalizedPhone: boolean): Prisma.OrderWhereInput => {
+      const where: Prisma.OrderWhereInput = { tripId };
+      if (q) {
+        const orFilters: Prisma.OrderWhereInput[] = [
+          { client: { name: { contains: q, mode: 'insensitive' } } },
+          { client: { phone: { contains: q, mode: 'insensitive' } } },
+        ];
+        if (withNormalizedPhone && normalizedPhone) {
+          orFilters.push({ client: { phoneNormalized: { contains: normalizedPhone } } });
+        }
+        if (this.isUuid(codeToken)) {
+          orFilters.push({ id: codeToken as string });
+        }
+        where.OR = orFilters;
       }
-      if (this.isUuid(codeToken)) {
-        orFilters.push({ id: codeToken as string });
-      }
-      where.OR = orFilters;
-    }
+      return where;
+    };
 
-    const [total, orders] = await Promise.all([
-      this.prisma.order.count({ where }),
-      this.prisma.order.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          client: true,
-          items: {
-            include: {
-              appliedProductFees: true,
-              product: {
-                include: {
-                  images: {
-                    orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+    let total: number;
+    let orders: any[];
+    try {
+      const where = buildWhere(true);
+      [total, orders] = await Promise.all([
+        this.prisma.order.count({ where }),
+        this.prisma.order.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            client: {
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+              },
+            },
+            items: {
+              include: {
+                appliedProductFees: true,
+                product: {
+                  include: {
+                    images: {
+                      orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+                    },
                   },
                 },
               },
+              orderBy: { createdAt: 'desc' },
             },
-            orderBy: { createdAt: 'desc' },
           },
-        },
-      }),
-    ]);
+        }),
+      ]);
+    } catch (error: any) {
+      // Compatibilidad cuando la columna phone_normalized aún no existe en DB.
+      if (error?.code !== 'P2022') throw error;
+      const where = buildWhere(false);
+      [total, orders] = await Promise.all([
+        this.prisma.order.count({ where }),
+        this.prisma.order.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            client: {
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+              },
+            },
+            items: {
+              include: {
+                appliedProductFees: true,
+                product: {
+                  include: {
+                    images: {
+                      orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+                    },
+                  },
+                },
+              },
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+        }),
+      ]);
+    }
 
     const data = await Promise.all(
       orders.map(async (order) => {
