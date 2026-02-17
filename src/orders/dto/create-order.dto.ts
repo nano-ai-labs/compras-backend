@@ -1,11 +1,11 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsNotEmpty, IsUUID } from 'class-validator';
 
 export class CreateOrderDto {
-  @IsString()
   @IsNotEmpty()
+  @IsUUID()
   tripId: string;
 
-  @IsString()
   @IsNotEmpty()
+  @IsUUID()
   clientId: string;
 }

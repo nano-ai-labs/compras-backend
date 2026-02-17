@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, Matches } from 'class-validator';
 
 export class CreateClientDto {
   @IsString()
@@ -11,5 +11,6 @@ export class CreateClientDto {
 
   @IsOptional()
   @IsString()
+  @Matches(/^[\d+\-\s()]{7,20}$/, { message: 'phone inválido' })
   phone?: string;
 }

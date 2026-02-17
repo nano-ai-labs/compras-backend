@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, Matches } from 'class-validator';
 
 export class UpdateClientDto {
   @IsOptional()
@@ -11,5 +11,6 @@ export class UpdateClientDto {
 
   @IsOptional()
   @IsString()
+  @Matches(/^[\d+\-\s()]{7,20}$/, { message: 'phone inválido' })
   phone?: string;
 }

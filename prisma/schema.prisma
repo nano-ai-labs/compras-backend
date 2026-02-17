@@ -53,6 +53,7 @@ model Client {
   name      String   @db.VarChar(100)
 
   phone     String?  @db.VarChar(30)
+  phoneNormalized String? @map("phone_normalized") @db.VarChar(30)
 
   userId    String?  @map("user_id") @db.Uuid
   user      User?    @relation(fields: [userId], references: [id])
@@ -62,6 +63,7 @@ model Client {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
 
   @@index([userId])
+  @@index([phoneNormalized])
   @@map("clients")
 }
 
