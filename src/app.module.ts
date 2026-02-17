@@ -17,6 +17,7 @@ import { ProductVariantsModule } from './product-variants/product-variants.modul
 import { TripProductsModule } from './trip-products/trip-products.module';
 import { ProductFeeCatalogModule } from './product-fee-catalog/product-fee-catalog.module';
 import { ExchangeRuleCatalogModule } from './exchange-rule-catalog/exchange-rule-catalog.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { ExchangeRuleCatalogModule } from './exchange-rule-catalog/exchange-rule
     TripProductsModule,
     ProductFeeCatalogModule,
     ExchangeRuleCatalogModule,
+    WhatsappModule,
   ],
 })
 export class AppModule {}
