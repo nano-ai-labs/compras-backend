@@ -275,7 +275,7 @@ export class OrdersService {
       order = await this.prisma.order.findFirst({
         where: {
           tripId,
-          client: { phoneNormalized: normalized },
+          client: { is: { phoneNormalized: normalized } },
         },
         include: {
           client: true,
@@ -290,10 +290,12 @@ export class OrdersService {
         where: {
           tripId,
           client: {
-            OR: [
-              { phone: normalized },
-              { phone: { contains: normalized } },
-            ],
+            is: {
+              OR: [
+                { phone: normalized },
+                { phone: { contains: normalized } },
+              ],
+            },
           },
         },
         include: {
