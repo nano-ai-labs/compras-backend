@@ -15,7 +15,7 @@ export class ExchangeRatesController {
 
   // Este lo llama el SiteLayoutClient (vía /api/fx)
   @Post('sync')
-  async sync(@Body('rate') rate: number) {
+  async sync(@Body('rate') rate: number | string) {
     return this.service.saveRate(rate);
   }
 }
