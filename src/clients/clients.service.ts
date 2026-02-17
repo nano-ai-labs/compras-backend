@@ -8,6 +8,10 @@ import { normalizePhone } from '../common/phone';
 export class ClientsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private isMissingPhoneNormalizedColumn(error: any): boolean {
+    return error?.code === 'P2022';
+  }
+
   async create(data: CreateClientDto) {
     const name = data.name?.trim();
     if (!name) {
@@ -19,18 +23,38 @@ export class ClientsService {
       throw new BadRequestException('Teléfono inválido');
     }
 
-    return this.prisma.client.create({
-      data: {
-        name,
-        userId: data.userId,
-        phone: data.phone ?? null,
-        phoneNormalized: normalized,
-      },
-    });
+    try {
+      return await this.prisma.client.create({
+        data: {
+          name,
+          userId: data.userId,
+          phone: data.phone ?? null,
+          phoneNormalized: normalized,
+        },
+      });
+    } catch (error: any) {
+      if (!this.isMissingPhoneNormalizedColumn(error)) throw error;
+      return this.prisma.client.create({
+        data: {
+          name,
+          userId: data.userId,
+          phone: data.phone ?? null,
+        },
+      });
+    }
   }
 
   async findAll() {
-    return this.prisma.client.findMany();
+    return this.prisma.client.findMany({
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        userId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   async findByPhone(phone: string) {
@@ -39,16 +63,56 @@ export class ClientsService {
       throw new BadRequestException('Parámetro phone inválido');
     }
 
-    const client = await this.prisma.client.findFirst({
-      where: { phoneNormalized: normalized },
-      orderBy: { createdAt: 'desc' },
-    });
+    let client;
+    try {
+      client = await this.prisma.client.findFirst({
+        where: { phoneNormalized: normalized },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          userId: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    } catch (error: any) {
+      if (!this.isMissingPhoneNormalizedColumn(error)) throw error;
+      client = await this.prisma.client.findFirst({
+        where: {
+          OR: [
+            { phone: normalized },
+            { phone: { contains: normalized } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          userId: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    }
 
     return client ?? null;
   }
 
   async findOne(id: string) {
-    const client = await this.prisma.client.findUnique({ where: { id } });
+    const client = await this.prisma.client.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        userId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
     if (!client) throw new NotFoundException('Cliente no encontrado');
     return client;
   }
@@ -67,15 +131,27 @@ export class ClientsService {
       throw new BadRequestException('Teléfono inválido');
     }
 
-    return this.prisma.client.update({
-      where: { id },
-      data: {
-        name: data.name?.trim(),
-        userId: data.userId,
-        phone: data.phone,
-        phoneNormalized: normalized,
-      },
-    });
+    try {
+      return await this.prisma.client.update({
+        where: { id },
+        data: {
+          name: data.name?.trim(),
+          userId: data.userId,
+          phone: data.phone,
+          phoneNormalized: normalized,
+        },
+      });
+    } catch (error: any) {
+      if (!this.isMissingPhoneNormalizedColumn(error)) throw error;
+      return this.prisma.client.update({
+        where: { id },
+        data: {
+          name: data.name?.trim(),
+          userId: data.userId,
+          phone: data.phone,
+        },
+      });
+    }
   }
 
   async remove(id: string) {

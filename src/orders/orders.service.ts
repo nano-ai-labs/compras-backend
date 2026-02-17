@@ -278,7 +278,13 @@ export class OrdersService {
           client: { is: { phoneNormalized: normalized } },
         },
         include: {
-          client: true,
+          client: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -299,7 +305,13 @@ export class OrdersService {
           },
         },
         include: {
-          client: true,
+          client: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
       });
