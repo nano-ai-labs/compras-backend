@@ -270,16 +270,38 @@ export class OrdersService {
       throw new BadRequestException('Parámetro phone inválido');
     }
 
-    const order = await this.prisma.order.findFirst({
-      where: {
-        tripId,
-        client: { phoneNormalized: normalized },
-      },
-      include: {
-        client: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    let order: any;
+    try {
+      order = await this.prisma.order.findFirst({
+        where: {
+          tripId,
+          client: { phoneNormalized: normalized },
+        },
+        include: {
+          client: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (error: any) {
+      // Compatibilidad cuando la columna phone_normalized aún no existe en DB.
+      if (error?.code !== 'P2022') throw error;
+
+      order = await this.prisma.order.findFirst({
+        where: {
+          tripId,
+          client: {
+            OR: [
+              { phone: normalized },
+              { phone: { contains: normalized } },
+            ],
+          },
+        },
+        include: {
+          client: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
 
     if (!order) {
       return {
