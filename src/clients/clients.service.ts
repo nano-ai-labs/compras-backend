@@ -8,6 +8,15 @@ import { normalizePhone } from '../common/phone';
 export class ClientsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly safeClientSelect = {
+    id: true,
+    name: true,
+    phone: true,
+    userId: true,
+    createdAt: true,
+    updatedAt: true,
+  } as const;
+
   private isMissingPhoneNormalizedColumn(error: any): boolean {
     return error?.code === 'P2022';
   }
@@ -31,6 +40,7 @@ export class ClientsService {
           phone: data.phone ?? null,
           phoneNormalized: normalized,
         },
+        select: this.safeClientSelect,
       });
     } catch (error: any) {
       if (!this.isMissingPhoneNormalizedColumn(error)) throw error;
@@ -40,20 +50,14 @@ export class ClientsService {
           userId: data.userId,
           phone: data.phone ?? null,
         },
+        select: this.safeClientSelect,
       });
     }
   }
 
   async findAll() {
     return this.prisma.client.findMany({
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        userId: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: this.safeClientSelect,
     });
   }
 
@@ -68,14 +72,7 @@ export class ClientsService {
       client = await this.prisma.client.findFirst({
         where: { phoneNormalized: normalized },
         orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          name: true,
-          phone: true,
-          userId: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+        select: this.safeClientSelect,
       });
     } catch (error: any) {
       if (!this.isMissingPhoneNormalizedColumn(error)) throw error;
@@ -87,14 +84,7 @@ export class ClientsService {
           ],
         },
         orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          name: true,
-          phone: true,
-          userId: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+        select: this.safeClientSelect,
       });
     }
 
@@ -104,14 +94,7 @@ export class ClientsService {
   async findOne(id: string) {
     const client = await this.prisma.client.findUnique({
       where: { id },
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        userId: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: this.safeClientSelect,
     });
     if (!client) throw new NotFoundException('Cliente no encontrado');
     return client;
@@ -140,6 +123,7 @@ export class ClientsService {
           phone: data.phone,
           phoneNormalized: normalized,
         },
+        select: this.safeClientSelect,
       });
     } catch (error: any) {
       if (!this.isMissingPhoneNormalizedColumn(error)) throw error;
@@ -150,6 +134,7 @@ export class ClientsService {
           userId: data.userId,
           phone: data.phone,
         },
+        select: this.safeClientSelect,
       });
     }
   }
