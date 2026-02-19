@@ -41,6 +41,12 @@ export class OrdersService {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 
+  private dateKeyFromDate(date: Date): string {
+    const d = new Date(date);
+    d.setUTCHours(0, 0, 0, 0);
+    return d.toISOString().slice(0, 10);
+  }
+
   /**
    * Crea una nueva orden vinculada a un viaje y un cliente
    */
@@ -176,24 +182,134 @@ export class OrdersService {
       ]);
     }
 
+    const [tripFees, tripExchangeRules, shippingRates] = await Promise.all([
+      this.prisma.tripProductFee.findMany({
+        where: { tripId },
+        select: {
+          catalogId: true,
+          nameSnapshot: true,
+          percentage: true,
+        },
+      }),
+      this.prisma.tripExchangeRule.findMany({
+        where: { tripId },
+        select: {
+          catalogId: true,
+          nameSnapshot: true,
+          valueAdded: true,
+        },
+      }),
+      this.prisma.tripShippingRate.findMany({
+        where: { tripId, enabled: true },
+        select: {
+          productTypeId: true,
+          nameSnapshot: true,
+          costMxn: true,
+          enabled: true,
+        },
+      }),
+    ]);
+
+    const spreadTotalMxn = tripExchangeRules.reduce(
+      (acc, r) => acc + this.toNumber(r.valueAdded),
+      0,
+    );
+
+    const shippingByType = new Map(
+      shippingRates.map((r) => [r.productTypeId, this.toNumber(r.costMxn)]),
+    );
+
+    const dateKeys = Array.from(
+      new Set(
+        orders.flatMap((order) =>
+          order.items.map((item) => this.dateKeyFromDate(item.createdAt)),
+        ),
+      ),
+    );
+
+    const exactRates = await this.prisma.exchangeRate.findMany({
+      where: {
+        date: {
+          in: dateKeys.map((k) => new Date(`${k}T00:00:00.000Z`)),
+        },
+      },
+      select: { date: true, rateMxn: true },
+    });
+
+    const latestRate = await this.prisma.exchangeRate.findFirst({
+      orderBy: { date: 'desc' },
+      select: { rateMxn: true },
+    });
+
+    const fallbackRate = this.toNumber(latestRate?.rateMxn);
+    const ratesByDate = new Map(
+      exactRates.map((r) => [this.dateKeyFromDate(r.date), this.toNumber(r.rateMxn)]),
+    );
+
     const data = await Promise.all(
       orders.map(async (order) => {
-        const exchangeRateBase = this.toNumber(order.exchangeRateBase);
-        const exchangeRateAdd = this.toNumber(order.exchangeRateAdd);
+        let baseUsdTotal = 0;
+        const feeUsdByCatalog = new Map<string, { label: string; percent: number; amount: number }>();
+        const feeMxnWithoutByCatalog = new Map<string, { label: string; percent: number; amount: number }>();
+        const feeMxnWithByCatalog = new Map<string, { label: string; percent: number; amount: number }>();
+        let baseMxnWithoutTotal = 0;
+        let baseMxnWithTotal = 0;
+        let shippingTotalMxn = 0;
 
         const items = await Promise.all(
           order.items.map(async (item) => {
-            const basePriceUsd = this.toNumber(item.basePriceUsd);
-            const shippingCostMxn = this.toNumber(item.shippingCostMxn);
-            const finalPriceMxn = this.toNumber(item.finalPriceMxn);
+            const unitBasePriceUsd = this.toNumber(item.basePriceUsd);
+            const qty = Math.max(1, Number(item.quantity || 1));
+            const basePriceUsd = unitBasePriceUsd * qty;
+            const dateKey = this.dateKeyFromDate(item.createdAt);
+            const baseRate = ratesByDate.get(dateKey) ?? fallbackRate;
+            const finalAppliedRate = baseRate + spreadTotalMxn;
+            const shippingPerUnit = item.productTypeId
+              ? shippingByType.get(item.productTypeId) ?? 0
+              : 0;
+            const shippingCostMxn = shippingPerUnit * qty;
 
-            const feesApplied = item.appliedProductFees.map((fee) => ({
-              label: fee.nameSnapshot,
-              amount_usd: this.toNumber(fee.amountUsd),
-            }));
+            baseUsdTotal += basePriceUsd;
+            baseMxnWithoutTotal += basePriceUsd * baseRate;
+            baseMxnWithTotal += basePriceUsd * finalAppliedRate;
+            shippingTotalMxn += shippingCostMxn;
 
-            const spreadTotal = exchangeRateAdd;
-            const finalAppliedRate = exchangeRateBase + spreadTotal;
+            const feesApplied = tripFees.map((fee) => {
+              const percent = this.toNumber(fee.percentage);
+              const amountUsd = basePriceUsd * (percent / 100);
+              const amountMxnWithout = amountUsd * baseRate;
+              const amountMxnWith = amountUsd * finalAppliedRate;
+
+              const byUsd = feeUsdByCatalog.get(fee.catalogId) ?? {
+                label: fee.nameSnapshot,
+                percent,
+                amount: 0,
+              };
+              byUsd.amount += amountUsd;
+              feeUsdByCatalog.set(fee.catalogId, byUsd);
+
+              const byMxnWithout = feeMxnWithoutByCatalog.get(fee.catalogId) ?? {
+                label: fee.nameSnapshot,
+                percent,
+                amount: 0,
+              };
+              byMxnWithout.amount += amountMxnWithout;
+              feeMxnWithoutByCatalog.set(fee.catalogId, byMxnWithout);
+
+              const byMxnWith = feeMxnWithByCatalog.get(fee.catalogId) ?? {
+                label: fee.nameSnapshot,
+                percent,
+                amount: 0,
+              };
+              byMxnWith.amount += amountMxnWith;
+              feeMxnWithByCatalog.set(fee.catalogId, byMxnWith);
+
+              return {
+                label: fee.nameSnapshot,
+                percent,
+                amount_usd: Number(amountUsd.toFixed(2)),
+              };
+            });
 
             const images = item.product
               ? await Promise.all(
@@ -208,25 +324,25 @@ export class OrdersService {
 
             return {
               id: item.id,
-              quantity: item.quantity,
-              basePriceUsd,
+              quantity: qty,
+              basePriceUsd: Number(basePriceUsd.toFixed(2)),
               shippingCostMxn,
-              finalPriceMxn,
+              finalPriceMxn: this.toNumber(item.finalPriceMxn),
               pricing_details: {
-                base_price_usd: basePriceUsd,
+                base_price_usd: Number(basePriceUsd.toFixed(2)),
                 fees_applied: feesApplied,
                 exchange_rules_applied: [
-                  { kind: 'base_rate', value_mxn: exchangeRateBase },
-                  { kind: 'spread', value_mxn: spreadTotal },
+                  { kind: 'base_rate', value_mxn: Number(baseRate.toFixed(2)) },
+                  { kind: 'spread', value_mxn: Number(spreadTotalMxn.toFixed(2)) },
                 ],
                 shipping_applied: [
                   { enabled: shippingCostMxn > 0, value_mxn: shippingCostMxn },
                 ],
                 summary: {
-                  base_rate: exchangeRateBase,
-                  spread_total_mxn: spreadTotal,
-                  final_applied_rate: finalAppliedRate,
-                  shipping_total_mxn: shippingCostMxn,
+                  base_rate: Number(baseRate.toFixed(2)),
+                  spread_total_mxn: Number(spreadTotalMxn.toFixed(2)),
+                  final_applied_rate: Number(finalAppliedRate.toFixed(2)),
+                  shipping_total_mxn: Number(shippingCostMxn.toFixed(2)),
                 },
               },
               product: item.product
@@ -240,6 +356,29 @@ export class OrdersService {
           }),
         );
 
+        const feesUsdByCatalogList = Array.from(feeUsdByCatalog.values()).map((f) => ({
+          label: f.label,
+          percent: Number(f.percent.toFixed(2)),
+          amount_usd: Number(f.amount.toFixed(2)),
+        }));
+        const feesMxnWithoutByCatalogList = Array.from(feeMxnWithoutByCatalog.values()).map((f) => ({
+          label: f.label,
+          percent: Number(f.percent.toFixed(2)),
+          amount_mxn: Number(f.amount.toFixed(2)),
+        }));
+        const feesMxnWithByCatalogList = Array.from(feeMxnWithByCatalog.values()).map((f) => ({
+          label: f.label,
+          percent: Number(f.percent.toFixed(2)),
+          amount_mxn: Number(f.amount.toFixed(2)),
+        }));
+
+        const feesUsdTotal = feesUsdByCatalogList.reduce((acc, f) => acc + f.amount_usd, 0);
+        const feesMxnWithoutTotal = feesMxnWithoutByCatalogList.reduce((acc, f) => acc + f.amount_mxn, 0);
+        const feesMxnWithTotal = feesMxnWithByCatalogList.reduce((acc, f) => acc + f.amount_mxn, 0);
+        const usdTotal = baseUsdTotal + feesUsdTotal;
+        const subtotalWithout = baseMxnWithoutTotal + feesMxnWithoutTotal;
+        const subtotalWith = baseMxnWithTotal + feesMxnWithTotal;
+
         return {
           id: order.id,
           tripId: order.tripId,
@@ -249,8 +388,31 @@ export class OrdersService {
           code: this.orderCode(order.id),
           status: order.status,
           grandTotalMxn: this.toNumber(order.grandTotalMxn),
-          exchangeRateBase,
-          exchangeRateAdd,
+          exchangeRateBase: null,
+          exchangeRateAdd: Number(spreadTotalMxn.toFixed(2)),
+          totals: {
+            base_usd_total: Number(baseUsdTotal.toFixed(2)),
+            fees_usd_by_catalog: feesUsdByCatalogList,
+            fees_usd_total: Number(feesUsdTotal.toFixed(2)),
+            total_usd: Number(usdTotal.toFixed(2)),
+            without_fee_rates: {
+              base_mxn_total: Number(baseMxnWithoutTotal.toFixed(2)),
+              fees_mxn_by_catalog: feesMxnWithoutByCatalogList,
+              fees_mxn_total: Number(feesMxnWithoutTotal.toFixed(2)),
+              subtotal_mxn: Number(subtotalWithout.toFixed(2)),
+              shipping_total_mxn: Number(shippingTotalMxn.toFixed(2)),
+              total_mxn: Number((subtotalWithout + shippingTotalMxn).toFixed(2)),
+            },
+            with_fee_rates: {
+              spread_total_mxn: Number(spreadTotalMxn.toFixed(2)),
+              base_mxn_total: Number(baseMxnWithTotal.toFixed(2)),
+              fees_mxn_by_catalog: feesMxnWithByCatalogList,
+              fees_mxn_total: Number(feesMxnWithTotal.toFixed(2)),
+              subtotal_mxn: Number(subtotalWith.toFixed(2)),
+              shipping_total_mxn: Number(shippingTotalMxn.toFixed(2)),
+              total_mxn: Number((subtotalWith + shippingTotalMxn).toFixed(2)),
+            },
+          },
           items,
           createdAt: order.createdAt.toISOString(),
           updatedAt: order.updatedAt.toISOString(),
