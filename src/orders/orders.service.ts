@@ -12,6 +12,8 @@ import { buildMeta } from '../common/pagination';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ListOrdersDto } from './dto/list-orders.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
+import { AvailableProductsDto } from './dto/available-products.dto';
+import { AddOrderItemDto } from './dto/add-order-item.dto';
 
 @Injectable()
 export class OrdersService {
@@ -45,6 +47,263 @@ export class OrdersService {
     const d = new Date(date);
     d.setUTCHours(0, 0, 0, 0);
     return d.toISOString().slice(0, 10);
+  }
+
+  private async getPricingConfig(tripId: string) {
+    const [tripFees, tripExchangeRules, shippingRates] = await Promise.all([
+      this.prisma.tripProductFee.findMany({
+        where: { tripId },
+        select: {
+          catalogId: true,
+          nameSnapshot: true,
+          percentage: true,
+        },
+      }),
+      this.prisma.tripExchangeRule.findMany({
+        where: { tripId },
+        select: {
+          catalogId: true,
+          nameSnapshot: true,
+          valueAdded: true,
+        },
+      }),
+      this.prisma.tripShippingRate.findMany({
+        where: { tripId, enabled: true },
+        select: {
+          productTypeId: true,
+          nameSnapshot: true,
+          costMxn: true,
+          enabled: true,
+        },
+      }),
+    ]);
+
+    const spreadTotalMxn = tripExchangeRules.reduce(
+      (acc, r) => acc + this.toNumber(r.valueAdded),
+      0,
+    );
+
+    const shippingByType = new Map(
+      shippingRates.map((r) => [r.productTypeId, this.toNumber(r.costMxn)]),
+    );
+
+    return { tripFees, tripExchangeRules, shippingRates, spreadTotalMxn, shippingByType };
+  }
+
+  private async getRatesForOrders(orders: any[]) {
+    const dateKeys = Array.from(
+      new Set(
+        orders.flatMap((order) =>
+          order.items.map((item) => this.dateKeyFromDate(item.createdAt)),
+        ),
+      ),
+    );
+
+    const exactRates = await this.prisma.exchangeRate.findMany({
+      where: {
+        date: {
+          in: dateKeys.map((k) => new Date(`${k}T00:00:00.000Z`)),
+        },
+      },
+      select: { date: true, rateMxn: true },
+    });
+
+    const latestRate = await this.prisma.exchangeRate.findFirst({
+      orderBy: { date: 'desc' },
+      select: { rateMxn: true },
+    });
+
+    const fallbackRate = this.toNumber(latestRate?.rateMxn);
+    const ratesByDate = new Map(
+      exactRates.map((r) => [this.dateKeyFromDate(r.date), this.toNumber(r.rateMxn)]),
+    );
+
+    return { ratesByDate, fallbackRate };
+  }
+
+  private async mapOrdersWithTotals(
+    orders: any[],
+    tripId: string,
+  ) {
+    const { tripFees, spreadTotalMxn, shippingByType } =
+      await this.getPricingConfig(tripId);
+    const { ratesByDate, fallbackRate } = await this.getRatesForOrders(orders);
+
+    return Promise.all(
+      orders.map(async (order) => {
+        let baseUsdTotal = 0;
+        const feeUsdByCatalog = new Map<string, { label: string; percent: number; amount: number }>();
+        const feeMxnWithoutByCatalog = new Map<string, { label: string; percent: number; amount: number }>();
+        const feeMxnWithByCatalog = new Map<string, { label: string; percent: number; amount: number }>();
+        let baseMxnWithoutTotal = 0;
+        let baseMxnWithTotal = 0;
+        let shippingTotalMxn = 0;
+
+        const items = await Promise.all(
+          order.items.map(async (item) => {
+            const unitBasePriceUsd = this.toNumber(item.basePriceUsd);
+            const qty = Math.max(1, Number(item.quantity || 1));
+            const basePriceUsd = unitBasePriceUsd * qty;
+            const dateKey = this.dateKeyFromDate(item.createdAt);
+            const baseRate = ratesByDate.get(dateKey) ?? fallbackRate;
+            const finalAppliedRate = baseRate + spreadTotalMxn;
+            const shippingPerUnit = item.productTypeId
+              ? shippingByType.get(item.productTypeId) ?? 0
+              : 0;
+            const shippingCostMxn = shippingPerUnit * qty;
+
+            baseUsdTotal += basePriceUsd;
+            baseMxnWithoutTotal += basePriceUsd * baseRate;
+            baseMxnWithTotal += basePriceUsd * finalAppliedRate;
+            shippingTotalMxn += shippingCostMxn;
+
+            const feesApplied = tripFees.map((fee) => {
+              const percent = this.toNumber(fee.percentage);
+              const amountUsd = basePriceUsd * (percent / 100);
+              const amountMxnWithout = amountUsd * baseRate;
+              const amountMxnWith = amountUsd * finalAppliedRate;
+
+              const byUsd = feeUsdByCatalog.get(fee.catalogId) ?? {
+                label: fee.nameSnapshot,
+                percent,
+                amount: 0,
+              };
+              byUsd.amount += amountUsd;
+              feeUsdByCatalog.set(fee.catalogId, byUsd);
+
+              const byMxnWithout = feeMxnWithoutByCatalog.get(fee.catalogId) ?? {
+                label: fee.nameSnapshot,
+                percent,
+                amount: 0,
+              };
+              byMxnWithout.amount += amountMxnWithout;
+              feeMxnWithoutByCatalog.set(fee.catalogId, byMxnWithout);
+
+              const byMxnWith = feeMxnWithByCatalog.get(fee.catalogId) ?? {
+                label: fee.nameSnapshot,
+                percent,
+                amount: 0,
+              };
+              byMxnWith.amount += amountMxnWith;
+              feeMxnWithByCatalog.set(fee.catalogId, byMxnWith);
+
+              return {
+                label: fee.nameSnapshot,
+                percent,
+                amount_usd: Number(amountUsd.toFixed(2)),
+              };
+            });
+
+            const images = item.product
+              ? await Promise.all(
+                  item.product.images.map(async (img) => ({
+                    id: img.id,
+                    url: await this.gcs.getSignedUrl(img.path, 60),
+                    isPrimary: img.isPrimary,
+                    sortOrder: img.sortOrder,
+                  })),
+                )
+              : [];
+
+            return {
+              id: item.id,
+              orderId: item.orderId,
+              tripProductId: item.tripProductId,
+              productId: item.productId,
+              productName: item.productName,
+              quantity: qty,
+              basePriceUsd: Number(basePriceUsd.toFixed(2)),
+              shippingCostMxn: Number(shippingCostMxn.toFixed(2)),
+              finalPriceMxn: this.toNumber(item.finalPriceMxn),
+              pricing_details: {
+                base_price_usd: Number(basePriceUsd.toFixed(2)),
+                fees_applied: feesApplied,
+                exchange_rules_applied: [
+                  { kind: 'base_rate', value_mxn: Number(baseRate.toFixed(2)) },
+                  { kind: 'spread', value_mxn: Number(spreadTotalMxn.toFixed(2)) },
+                ],
+                shipping_applied: [
+                  { enabled: shippingCostMxn > 0, value_mxn: Number(shippingCostMxn.toFixed(2)) },
+                ],
+                summary: {
+                  base_rate: Number(baseRate.toFixed(2)),
+                  spread_total_mxn: Number(spreadTotalMxn.toFixed(2)),
+                  final_applied_rate: Number(finalAppliedRate.toFixed(2)),
+                  shipping_total_mxn: Number(shippingCostMxn.toFixed(2)),
+                },
+              },
+              product: item.product
+                ? {
+                    id: item.product.id,
+                    name: item.product.name,
+                    images,
+                  }
+                : null,
+            };
+          }),
+        );
+
+        const feesUsdByCatalogList = Array.from(feeUsdByCatalog.values()).map((f) => ({
+          label: f.label,
+          percent: Number(f.percent.toFixed(2)),
+          amount_usd: Number(f.amount.toFixed(2)),
+        }));
+        const feesMxnWithoutByCatalogList = Array.from(feeMxnWithoutByCatalog.values()).map((f) => ({
+          label: f.label,
+          percent: Number(f.percent.toFixed(2)),
+          amount_mxn: Number(f.amount.toFixed(2)),
+        }));
+        const feesMxnWithByCatalogList = Array.from(feeMxnWithByCatalog.values()).map((f) => ({
+          label: f.label,
+          percent: Number(f.percent.toFixed(2)),
+          amount_mxn: Number(f.amount.toFixed(2)),
+        }));
+
+        const feesUsdTotal = feesUsdByCatalogList.reduce((acc, f) => acc + f.amount_usd, 0);
+        const feesMxnWithoutTotal = feesMxnWithoutByCatalogList.reduce((acc, f) => acc + f.amount_mxn, 0);
+        const feesMxnWithTotal = feesMxnWithByCatalogList.reduce((acc, f) => acc + f.amount_mxn, 0);
+        const usdTotal = baseUsdTotal + feesUsdTotal;
+        const subtotalWithout = baseMxnWithoutTotal + feesMxnWithoutTotal;
+        const subtotalWith = baseMxnWithTotal + feesMxnWithTotal;
+
+        return {
+          id: order.id,
+          tripId: order.tripId,
+          clientId: order.clientId,
+          customerName: order.client?.name ?? null,
+          customerPhone: order.client?.phone ?? null,
+          code: this.orderCode(order.id),
+          status: order.status,
+          grandTotalMxn: this.toNumber(order.grandTotalMxn),
+          totals: {
+            base_usd_total: Number(baseUsdTotal.toFixed(2)),
+            fees_usd_by_catalog: feesUsdByCatalogList,
+            fees_usd_total: Number(feesUsdTotal.toFixed(2)),
+            total_usd: Number(usdTotal.toFixed(2)),
+            without_fee_rates: {
+              base_mxn_total: Number(baseMxnWithoutTotal.toFixed(2)),
+              fees_mxn_by_catalog: feesMxnWithoutByCatalogList,
+              fees_mxn_total: Number(feesMxnWithoutTotal.toFixed(2)),
+              subtotal_mxn: Number(subtotalWithout.toFixed(2)),
+              shipping_total_mxn: Number(shippingTotalMxn.toFixed(2)),
+              total_mxn: Number((subtotalWithout + shippingTotalMxn).toFixed(2)),
+            },
+            with_fee_rates: {
+              spread_total_mxn: Number(spreadTotalMxn.toFixed(2)),
+              base_mxn_total: Number(baseMxnWithTotal.toFixed(2)),
+              fees_mxn_by_catalog: feesMxnWithByCatalogList,
+              fees_mxn_total: Number(feesMxnWithTotal.toFixed(2)),
+              subtotal_mxn: Number(subtotalWith.toFixed(2)),
+              shipping_total_mxn: Number(shippingTotalMxn.toFixed(2)),
+              total_mxn: Number((subtotalWith + shippingTotalMxn).toFixed(2)),
+            },
+          },
+          items,
+          createdAt: order.createdAt.toISOString(),
+          updatedAt: order.updatedAt.toISOString(),
+        };
+      }),
+    );
   }
 
   /**
@@ -182,243 +441,7 @@ export class OrdersService {
       ]);
     }
 
-    const [tripFees, tripExchangeRules, shippingRates] = await Promise.all([
-      this.prisma.tripProductFee.findMany({
-        where: { tripId },
-        select: {
-          catalogId: true,
-          nameSnapshot: true,
-          percentage: true,
-        },
-      }),
-      this.prisma.tripExchangeRule.findMany({
-        where: { tripId },
-        select: {
-          catalogId: true,
-          nameSnapshot: true,
-          valueAdded: true,
-        },
-      }),
-      this.prisma.tripShippingRate.findMany({
-        where: { tripId, enabled: true },
-        select: {
-          productTypeId: true,
-          nameSnapshot: true,
-          costMxn: true,
-          enabled: true,
-        },
-      }),
-    ]);
-
-    const spreadTotalMxn = tripExchangeRules.reduce(
-      (acc, r) => acc + this.toNumber(r.valueAdded),
-      0,
-    );
-
-    const shippingByType = new Map(
-      shippingRates.map((r) => [r.productTypeId, this.toNumber(r.costMxn)]),
-    );
-
-    const dateKeys = Array.from(
-      new Set(
-        orders.flatMap((order) =>
-          order.items.map((item) => this.dateKeyFromDate(item.createdAt)),
-        ),
-      ),
-    );
-
-    const exactRates = await this.prisma.exchangeRate.findMany({
-      where: {
-        date: {
-          in: dateKeys.map((k) => new Date(`${k}T00:00:00.000Z`)),
-        },
-      },
-      select: { date: true, rateMxn: true },
-    });
-
-    const latestRate = await this.prisma.exchangeRate.findFirst({
-      orderBy: { date: 'desc' },
-      select: { rateMxn: true },
-    });
-
-    const fallbackRate = this.toNumber(latestRate?.rateMxn);
-    const ratesByDate = new Map(
-      exactRates.map((r) => [this.dateKeyFromDate(r.date), this.toNumber(r.rateMxn)]),
-    );
-
-    const data = await Promise.all(
-      orders.map(async (order) => {
-        let baseUsdTotal = 0;
-        const feeUsdByCatalog = new Map<string, { label: string; percent: number; amount: number }>();
-        const feeMxnWithoutByCatalog = new Map<string, { label: string; percent: number; amount: number }>();
-        const feeMxnWithByCatalog = new Map<string, { label: string; percent: number; amount: number }>();
-        let baseMxnWithoutTotal = 0;
-        let baseMxnWithTotal = 0;
-        let shippingTotalMxn = 0;
-
-        const items = await Promise.all(
-          order.items.map(async (item) => {
-            const unitBasePriceUsd = this.toNumber(item.basePriceUsd);
-            const qty = Math.max(1, Number(item.quantity || 1));
-            const basePriceUsd = unitBasePriceUsd * qty;
-            const dateKey = this.dateKeyFromDate(item.createdAt);
-            const baseRate = ratesByDate.get(dateKey) ?? fallbackRate;
-            const finalAppliedRate = baseRate + spreadTotalMxn;
-            const shippingPerUnit = item.productTypeId
-              ? shippingByType.get(item.productTypeId) ?? 0
-              : 0;
-            const shippingCostMxn = shippingPerUnit * qty;
-
-            baseUsdTotal += basePriceUsd;
-            baseMxnWithoutTotal += basePriceUsd * baseRate;
-            baseMxnWithTotal += basePriceUsd * finalAppliedRate;
-            shippingTotalMxn += shippingCostMxn;
-
-            const feesApplied = tripFees.map((fee) => {
-              const percent = this.toNumber(fee.percentage);
-              const amountUsd = basePriceUsd * (percent / 100);
-              const amountMxnWithout = amountUsd * baseRate;
-              const amountMxnWith = amountUsd * finalAppliedRate;
-
-              const byUsd = feeUsdByCatalog.get(fee.catalogId) ?? {
-                label: fee.nameSnapshot,
-                percent,
-                amount: 0,
-              };
-              byUsd.amount += amountUsd;
-              feeUsdByCatalog.set(fee.catalogId, byUsd);
-
-              const byMxnWithout = feeMxnWithoutByCatalog.get(fee.catalogId) ?? {
-                label: fee.nameSnapshot,
-                percent,
-                amount: 0,
-              };
-              byMxnWithout.amount += amountMxnWithout;
-              feeMxnWithoutByCatalog.set(fee.catalogId, byMxnWithout);
-
-              const byMxnWith = feeMxnWithByCatalog.get(fee.catalogId) ?? {
-                label: fee.nameSnapshot,
-                percent,
-                amount: 0,
-              };
-              byMxnWith.amount += amountMxnWith;
-              feeMxnWithByCatalog.set(fee.catalogId, byMxnWith);
-
-              return {
-                label: fee.nameSnapshot,
-                percent,
-                amount_usd: Number(amountUsd.toFixed(2)),
-              };
-            });
-
-            const images = item.product
-              ? await Promise.all(
-                  item.product.images.map(async (img) => ({
-                    id: img.id,
-                    url: await this.gcs.getSignedUrl(img.path, 60),
-                    isPrimary: img.isPrimary,
-                    sortOrder: img.sortOrder,
-                  })),
-                )
-              : [];
-
-            return {
-              id: item.id,
-              quantity: qty,
-              basePriceUsd: Number(basePriceUsd.toFixed(2)),
-              shippingCostMxn,
-              finalPriceMxn: this.toNumber(item.finalPriceMxn),
-              pricing_details: {
-                base_price_usd: Number(basePriceUsd.toFixed(2)),
-                fees_applied: feesApplied,
-                exchange_rules_applied: [
-                  { kind: 'base_rate', value_mxn: Number(baseRate.toFixed(2)) },
-                  { kind: 'spread', value_mxn: Number(spreadTotalMxn.toFixed(2)) },
-                ],
-                shipping_applied: [
-                  { enabled: shippingCostMxn > 0, value_mxn: shippingCostMxn },
-                ],
-                summary: {
-                  base_rate: Number(baseRate.toFixed(2)),
-                  spread_total_mxn: Number(spreadTotalMxn.toFixed(2)),
-                  final_applied_rate: Number(finalAppliedRate.toFixed(2)),
-                  shipping_total_mxn: Number(shippingCostMxn.toFixed(2)),
-                },
-              },
-              product: item.product
-                ? {
-                    id: item.product.id,
-                    name: item.product.name,
-                    images,
-                  }
-                : null,
-            };
-          }),
-        );
-
-        const feesUsdByCatalogList = Array.from(feeUsdByCatalog.values()).map((f) => ({
-          label: f.label,
-          percent: Number(f.percent.toFixed(2)),
-          amount_usd: Number(f.amount.toFixed(2)),
-        }));
-        const feesMxnWithoutByCatalogList = Array.from(feeMxnWithoutByCatalog.values()).map((f) => ({
-          label: f.label,
-          percent: Number(f.percent.toFixed(2)),
-          amount_mxn: Number(f.amount.toFixed(2)),
-        }));
-        const feesMxnWithByCatalogList = Array.from(feeMxnWithByCatalog.values()).map((f) => ({
-          label: f.label,
-          percent: Number(f.percent.toFixed(2)),
-          amount_mxn: Number(f.amount.toFixed(2)),
-        }));
-
-        const feesUsdTotal = feesUsdByCatalogList.reduce((acc, f) => acc + f.amount_usd, 0);
-        const feesMxnWithoutTotal = feesMxnWithoutByCatalogList.reduce((acc, f) => acc + f.amount_mxn, 0);
-        const feesMxnWithTotal = feesMxnWithByCatalogList.reduce((acc, f) => acc + f.amount_mxn, 0);
-        const usdTotal = baseUsdTotal + feesUsdTotal;
-        const subtotalWithout = baseMxnWithoutTotal + feesMxnWithoutTotal;
-        const subtotalWith = baseMxnWithTotal + feesMxnWithTotal;
-
-        return {
-          id: order.id,
-          tripId: order.tripId,
-          clientId: order.clientId,
-          customerName: order.client?.name ?? null,
-          customerPhone: order.client?.phone ?? null,
-          code: this.orderCode(order.id),
-          status: order.status,
-          grandTotalMxn: this.toNumber(order.grandTotalMxn),
-          exchangeRateBase: null,
-          exchangeRateAdd: Number(spreadTotalMxn.toFixed(2)),
-          totals: {
-            base_usd_total: Number(baseUsdTotal.toFixed(2)),
-            fees_usd_by_catalog: feesUsdByCatalogList,
-            fees_usd_total: Number(feesUsdTotal.toFixed(2)),
-            total_usd: Number(usdTotal.toFixed(2)),
-            without_fee_rates: {
-              base_mxn_total: Number(baseMxnWithoutTotal.toFixed(2)),
-              fees_mxn_by_catalog: feesMxnWithoutByCatalogList,
-              fees_mxn_total: Number(feesMxnWithoutTotal.toFixed(2)),
-              subtotal_mxn: Number(subtotalWithout.toFixed(2)),
-              shipping_total_mxn: Number(shippingTotalMxn.toFixed(2)),
-              total_mxn: Number((subtotalWithout + shippingTotalMxn).toFixed(2)),
-            },
-            with_fee_rates: {
-              spread_total_mxn: Number(spreadTotalMxn.toFixed(2)),
-              base_mxn_total: Number(baseMxnWithTotal.toFixed(2)),
-              fees_mxn_by_catalog: feesMxnWithByCatalogList,
-              fees_mxn_total: Number(feesMxnWithTotal.toFixed(2)),
-              subtotal_mxn: Number(subtotalWith.toFixed(2)),
-              shipping_total_mxn: Number(shippingTotalMxn.toFixed(2)),
-              total_mxn: Number((subtotalWith + shippingTotalMxn).toFixed(2)),
-            },
-          },
-          items,
-          createdAt: order.createdAt.toISOString(),
-          updatedAt: order.updatedAt.toISOString(),
-        };
-      }),
-    );
+    const data = await this.mapOrdersWithTotals(orders, tripId);
 
     return {
       data,
@@ -498,17 +521,279 @@ export class OrdersService {
     };
   }
 
-  /**
-   * Busca una orden por ID básica
-   */
-  async findOne(id: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-      include: { trip: true, client: true, items: true },
+  async findOne(id: string, tripId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id, tripId },
+      include: {
+        client: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+          },
+        },
+        items: {
+          include: {
+            appliedProductFees: true,
+            product: {
+              include: {
+                images: {
+                  orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
     });
 
     if (!order) throw new NotFoundException(`Orden con ID ${id} no encontrada`);
-    return order;
+    const [mapped] = await this.mapOrdersWithTotals([order], tripId);
+    return mapped;
+  }
+
+  async getAvailableProducts(orderId: string, query: AvailableProductsDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, tripId: true },
+    });
+    if (!order) throw new NotFoundException('Pedido no encontrado');
+    if (order.tripId !== query.tripId) {
+      throw new BadRequestException('El pedido no pertenece al tripId enviado');
+    }
+
+    const usedItems = await this.prisma.orderItem.findMany({
+      where: { orderId },
+      select: { tripProductId: true, productId: true },
+    });
+    const usedTripProductIds = usedItems
+      .map((x) => x.tripProductId)
+      .filter(Boolean) as string[];
+    const usedProductIds = usedItems
+      .map((x) => x.productId)
+      .filter(Boolean) as string[];
+
+    const where: Prisma.TripProductWhereInput = {
+      tripId: query.tripId,
+      isActive: true,
+      ...(usedTripProductIds.length > 0 ? { id: { notIn: usedTripProductIds } } : {}),
+      ...(usedProductIds.length > 0 ? { productId: { notIn: usedProductIds } } : {}),
+    };
+
+    const [total, tripProducts, cfg, latestRate] = await Promise.all([
+      this.prisma.tripProduct.count({ where }),
+      this.prisma.tripProduct.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          product: {
+            include: {
+              images: {
+                orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+              },
+              productType: { select: { id: true, name: true } },
+              brand: { select: { name: true } },
+              color: { select: { name: true } },
+            },
+          },
+        },
+      }),
+      this.getPricingConfig(query.tripId),
+      this.prisma.exchangeRate.findFirst({
+        orderBy: { date: 'desc' },
+        select: { rateMxn: true },
+      }),
+    ]);
+
+    const baseRate = this.toNumber(latestRate?.rateMxn);
+
+    const data = await Promise.all(
+      tripProducts.map(async (tp) => {
+        const basePriceUsd = this.toNumber(tp.basePriceUsd ?? tp.product.defaultPriceUsd);
+        const shippingPerUnit = cfg.shippingByType.get(tp.product.productTypeId) ?? 0;
+
+        const feesApplied = cfg.tripFees.map((fee) => {
+          const percent = this.toNumber(fee.percentage);
+          const amountUsd = basePriceUsd * (percent / 100);
+          return {
+            label: fee.nameSnapshot,
+            percent: Number(percent.toFixed(2)),
+            amount_usd: Number(amountUsd.toFixed(2)),
+          };
+        });
+        const feesTotalUsd = feesApplied.reduce((acc, f) => acc + f.amount_usd, 0);
+        const finalRate = baseRate + cfg.spreadTotalMxn;
+        const subtotalWithout = (basePriceUsd + feesTotalUsd) * baseRate;
+        const subtotalWith = (basePriceUsd + feesTotalUsd) * finalRate;
+
+        const images = await Promise.all(
+          tp.product.images.map(async (img) => ({
+            id: img.id,
+            url: await this.gcs.getSignedUrl(img.path, 60),
+            isPrimary: img.isPrimary,
+            sortOrder: img.sortOrder,
+          })),
+        );
+
+        return {
+          id: tp.id,
+          tripId: tp.tripId,
+          productId: tp.productId,
+          productTypeId: tp.product.productTypeId,
+          productName: tp.product.name,
+          displayName: [
+            tp.product.productType?.name,
+            tp.product.brand?.name,
+            tp.product.color?.name ? `Color: ${tp.product.color.name}` : null,
+            tp.product.name,
+          ].filter(Boolean).join(' '),
+          basePriceUsd: Number(basePriceUsd.toFixed(2)),
+          primaryImageUrl: images.find((i) => i.isPrimary)?.url ?? images[0]?.url ?? null,
+          images,
+          pricing_details: {
+            base_price_usd: Number(basePriceUsd.toFixed(2)),
+            fees_applied: feesApplied,
+            exchange_rules_applied: [
+              { kind: 'base_rate', value_mxn: Number(baseRate.toFixed(2)) },
+              { kind: 'spread', value_mxn: Number(cfg.spreadTotalMxn.toFixed(2)) },
+            ],
+            shipping_applied: [{ enabled: shippingPerUnit > 0, value_mxn: Number(shippingPerUnit.toFixed(2)) }],
+            summary: {
+              base_rate: Number(baseRate.toFixed(2)),
+              spread_total_mxn: Number(cfg.spreadTotalMxn.toFixed(2)),
+              final_applied_rate: Number(finalRate.toFixed(2)),
+              shipping_total_mxn: Number(shippingPerUnit.toFixed(2)),
+              subtotal_mxn_without_fee_rates: Number(subtotalWithout.toFixed(2)),
+              subtotal_mxn_with_fee_rates: Number(subtotalWith.toFixed(2)),
+            },
+          },
+        };
+      }),
+    );
+
+    return {
+      data,
+      meta: buildMeta(page, limit, total),
+    };
+  }
+
+  async addItem(orderId: string, dto: AddOrderItemDto) {
+    const qty = Math.max(1, Number(dto.quantity || 1));
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, tripId: true },
+    });
+    if (!order) throw new NotFoundException('Pedido no encontrado');
+
+    const tripProduct = await this.prisma.tripProduct.findUnique({
+      where: { id: dto.tripProductId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            stock: true,
+            defaultPriceUsd: true,
+            productTypeId: true,
+            productType: { select: { name: true } },
+          },
+        },
+      },
+    });
+    if (!tripProduct) throw new NotFoundException('TripProduct no encontrado');
+    if (tripProduct.tripId !== order.tripId) {
+      throw new BadRequestException('El producto no pertenece al viaje del pedido');
+    }
+
+    const duplicate = await this.prisma.orderItem.findFirst({
+      where: { orderId, tripProductId: dto.tripProductId },
+      select: { id: true },
+    });
+    if (duplicate) throw new ConflictException('Este producto ya fue agregado al pedido');
+
+    const unitBaseUsd = this.toNumber(tripProduct.basePriceUsd ?? tripProduct.product.defaultPriceUsd);
+    if (!unitBaseUsd || unitBaseUsd <= 0) {
+      throw new BadRequestException('Producto sin precio base USD');
+    }
+    if (tripProduct.product.stock < qty) {
+      throw new BadRequestException('Stock insuficiente');
+    }
+
+    const shipping = await this.prisma.tripShippingRate.findUnique({
+      where: {
+        tripId_productTypeId: {
+          tripId: order.tripId,
+          productTypeId: tripProduct.product.productTypeId,
+        },
+      },
+      select: { costMxn: true, enabled: true, nameSnapshot: true },
+    });
+    const shippingPerUnit = shipping?.enabled ? this.toNumber(shipping.costMxn) : 0;
+    const shippingTotal = shippingPerUnit * qty;
+    const fees = await this.prisma.tripProductFee.findMany({
+      where: { tripId: order.tripId },
+      select: { id: true, nameSnapshot: true, percentage: true },
+    });
+
+    const item = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.orderItem.create({
+        data: {
+          orderId,
+          tripProductId: tripProduct.id,
+          productId: tripProduct.productId,
+          quantity: qty,
+          productName: tripProduct.product.name,
+          basePriceUsd: new Prisma.Decimal(unitBaseUsd),
+          productTypeId: tripProduct.product.productTypeId,
+          productTypeSnapshot: tripProduct.product.productType?.name ?? null,
+          shippingCostMxn: new Prisma.Decimal(shippingTotal),
+          finalPriceMxn: new Prisma.Decimal(0),
+        },
+      });
+
+      for (const fee of fees) {
+        const percent = this.toNumber(fee.percentage);
+        const amountUsd = unitBaseUsd * qty * (percent / 100);
+        await tx.orderItemProductFee.create({
+          data: {
+            orderItemId: created.id,
+            tripProductFeeId: fee.id,
+            nameSnapshot: fee.nameSnapshot,
+            percentageUsed: new Prisma.Decimal(percent),
+            amountUsd: new Prisma.Decimal(amountUsd),
+          },
+        });
+      }
+
+      await tx.product.update({
+        where: { id: tripProduct.productId },
+        data: { stock: { decrement: qty } },
+      });
+
+      return created;
+    });
+
+    const detailed = await this.findOne(orderId, order.tripId);
+    const newGrandTotal = detailed.totals?.with_fee_rates?.total_mxn ?? 0;
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { grandTotalMxn: new Prisma.Decimal(newGrandTotal) },
+    });
+
+    return {
+      itemId: item.id,
+      order: {
+        ...detailed,
+        grandTotalMxn: Number(newGrandTotal.toFixed(2)),
+      },
+    };
   }
 
   /**
@@ -567,7 +852,12 @@ export class OrdersService {
    * Actualiza el estado o datos de la orden
    */
   async update(id: string, dto: UpdateOrderDto) {
-    await this.findOne(id);
+    const exists = await this.prisma.order.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException(`Orden con ID ${id} no encontrada`);
+
     return this.prisma.order.update({
       where: { id },
       data: dto,
@@ -578,7 +868,12 @@ export class OrdersService {
    * Elimina una orden
    */
   async remove(id: string) {
-    await this.findOne(id);
+    const exists = await this.prisma.order.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException(`Orden con ID ${id} no encontrada`);
+
     return this.prisma.order.delete({ where: { id } });
   }
 
